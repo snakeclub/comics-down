@@ -14,8 +14,6 @@ comics-down工具命令模块
 
 import os
 import sys
-import re
-import requests
 import traceback
 import time
 import copy
@@ -39,6 +37,7 @@ from HiveNetLib.simple_parallel import ParallelPool, ThreadParallel, ThreadParal
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), os.path.pardir, os.path.pardir)))
 from comics_down.lib.down_tool import DownTool
+from comics_down.lib.driver_fw import BaseDriverFW
 
 
 __MOUDLE__ = 'mediawiki_cmd'  # 模块名
@@ -89,6 +88,10 @@ class ComicsDownCmd(CmdBaseFW):
             _module = ImportTool.import_module(_file[0: -3], extend_path=_path, is_force=True)
             _clsmembers = inspect.getmembers(_module, inspect.isclass)
             for (_class_name, _class) in _clsmembers:
+                if not hasattr(_class, 'get_supports') or _class == BaseDriverFW:
+                    # 通过get_supports来判断是否驱动类
+                    continue
+
                 # 类对象加入到字典中
                 _class_id = _class.get_id()
                 _driver_dict['class'][_class_id] = _class
@@ -96,8 +99,8 @@ class ComicsDownCmd(CmdBaseFW):
                 # 增加支持的网站路由
                 _support_list = _class.get_supports()
                 for _website in _support_list:
-                    _driver_dict['site_route'][_website[0].upper()] = _class_id  # 网站与类id对应
-                    _driver_dict['website'][_website[0]] = _website[1]  # 网站说明
+                    _driver_dict['site_route'][_website.upper()] = _class_id  # 网站与类id对应
+                    _driver_dict['website'][_website] = _support_list[_website]  # 网站说明
 
         # 完成处理
         return True
@@ -127,7 +130,7 @@ class ComicsDownCmd(CmdBaseFW):
             self._console_global_para['config_file'],
             encoding=self._console_global_para['config_encoding']
         )
-        _driver_path = _config_xml.get_value('/console/driver_path')
+        _driver_path = os.path.realpath(_config_xml.get_value('/console/driver_path'))
         self._console_global_para['driver_path'] = _driver_path
         self._console_global_para['default_save_path'] = _config_xml.get_value(
             '/console/default_save_path')
@@ -205,12 +208,12 @@ class ComicsDownCmd(CmdBaseFW):
             prompt_obj.prompt_print(_('path must be not null'))
             return _result
 
-        _path = os.path.realpath(_path)
-        if not os.path.exists(_path):
-            prompt_obj.prompt_print(_("Path '$1' not exists!", _path))
+        self._console_global_para['driver_path'] = os.path.realpath(_path)
+        if not os.path.exists(self._console_global_para['driver_path']):
+            prompt_obj.prompt_print(
+                _("Path '$1' not exists!", self._console_global_para['driver_path'])
+            )
             return _result
-
-        self._console_global_para['driver_path'] = _path
 
         # 修改配置文件中的驱动搜索路径
         _config_xml = SimpleXml(
@@ -219,12 +222,12 @@ class ComicsDownCmd(CmdBaseFW):
         )
         _config_xml.set_value(
             '/console/driver_path',
-            self._console_global_para['driver_path']
+            _path
         )
         _config_xml.save()
 
         # 加载支持的网站
-        self.import_drivers(_path)
+        self.import_drivers(self._console_global_para['driver_path'])
 
         prompt_obj.prompt_print(_("Driver path set to '$1'",
                                   self._console_global_para['driver_path']))
@@ -252,12 +255,10 @@ class ComicsDownCmd(CmdBaseFW):
             prompt_obj.prompt_print(_('path must be not null'))
             return _result
 
-        _path = os.path.realpath(_path)
-        if not os.path.exists(_path):
+        self._console_global_para['default_save_path'] = os.path.realpath(_path)
+        if not os.path.exists(self._console_global_para['default_save_path']):
             # 创建目录
-            FileTool.create_dir(_path)
-
-        self._console_global_para['default_save_path'] = _path
+            FileTool.create_dir(self._console_global_para['default_save_path'])
 
         # 修改配置文件中的默认保存目录
         _config_xml = SimpleXml(
@@ -266,7 +267,7 @@ class ComicsDownCmd(CmdBaseFW):
         )
         _config_xml.set_value(
             '/console/default_save_path',
-            self._console_global_para['default_save_path']
+            _path
         )
         _config_xml.save()
 
@@ -310,7 +311,7 @@ class ComicsDownCmd(CmdBaseFW):
             print_str属性要求框架进行打印处理
         """
         # 获取字典参数
-        _para_dict = self._cmd_para_to_dict(cmd_para)
+        _para_dict = self._cmd_para_to_dict(cmd_para, name_with_sign=False)
 
         # 默认保存目录
         _default_save_path = self._console_global_para['default_save_path']
@@ -339,7 +340,7 @@ class ComicsDownCmd(CmdBaseFW):
         RunTool.set_global_var('JOB_RESULT', _job_result)
 
         with ExceptionTool.ignored_cresult(
-            result_obj=_result, self_log_msg=_('Download get exception')
+            result_obj=_result, self_log_msg=_('Download get exception'), debug=True
         ):
             if 'job_file' in para_dict.keys():
                 # 从文件中获取url列表执行下载, 通过并行方式下载
@@ -390,9 +391,9 @@ class ComicsDownCmd(CmdBaseFW):
         for _name in _job_result.keys():
             _info = _job_result[_name]
             prompt_obj.prompt_print(
-                'Task [%s] %s: files[%d] success[%d] fail[%d] msg[%s]' % (
+                'Task [%s] %s: files[%d] success[%d] task[%d] task_fail[%d] msg[%s]' % (
                     _name, _info['status'], _info['files'],
-                    _info['success'], _info['fail'], _info['msg']
+                    _info['success'], _info['task'], _info['task_fail'], _info['msg']
                 )
             )
 
@@ -411,7 +412,8 @@ class ComicsDownCmd(CmdBaseFW):
             'msg': '',
             'files': 0,
             'success': 0,
-            'fail': 0
+            'task': 0,
+            'task_fail': 0
         }
 
         # 处理默认的配置信息
@@ -424,21 +426,23 @@ class ComicsDownCmd(CmdBaseFW):
             'encoding': 'utf-8',
             'force_update': 'n',
             'job_down_worker': '10',
-            'down_worker_overtime': '300',
+            'down_overtime': '300',
             'use_break_down': 'y',
             'overtime': '30',
             'connect_retry': '3',
             'verify': 'y',
             'remove_wget_tmp': 'y',
             'webdriver': 'Chrome',
-            'webdriver_wait_all_loaded': '',
-            'webdriver_overtime': '30',
-            'webdriver_headless': 'n',
+            'wd_wait_all_loaded': 'n',
+            'wd_overtime': '30',
+            'wd_headless': 'n',
+            'search_mode': 'n',
+            'show_rate': 'n'
         }
         _para_dict.update(para_dict)
 
         with ExceptionTool.ignored_cresult(
-            result_obj=_result, self_log_msg=_('Download job exception')
+            result_obj=_result, self_log_msg=_('Download job exception'), debug=True
         ):
             _driver = None
             _url_info = None
@@ -450,8 +454,12 @@ class ComicsDownCmd(CmdBaseFW):
                     raise AssertionError(_down_info['msg'])
 
                 _url_info = urlparse(_para_dict['url'])
-                _driver = self.driver_dict['class'][self.driver_dict['site_route']
-                                                    [_url_info._url_info.netloc.upper()]]
+                _site = _url_info.netloc.upper()
+                if _site not in self.driver_dict['site_route'].keys():
+                    _down_info['msg'] = _('not driver for the website [$1]', _site)
+                    raise RuntimeError(_down_info['msg'])
+
+                _driver = self.driver_dict['class'][self.driver_dict['site_route'][_site]]
                 _para_dict['name'] = _driver.get_name_by_url(**_para_dict)
 
             # 确保漫画名能作为目录保存
@@ -469,18 +477,17 @@ class ComicsDownCmd(CmdBaseFW):
                 _para_dict['url'] = _xml_doc.get_value('/down_task/info/url')
             _down_info['files'] = int(_xml_doc.get_value('/down_task/info/files'))
             _down_info['success'] = int(_xml_doc.get_value('/down_task/info/success'))
-            _down_info['fail'] = int(_xml_doc.get_value('/down_task/info/fail'))
             _vol_info_ok = _xml_doc.get_value('/down_task/info/vol_info_ok')
             _file_info_ok = _xml_doc.get_value('/down_task/info/file_info_ok')
 
             # 解析网页获取卷信息 - 在驱动框架已处理了自动重试
-            if _para_dict['force_update'] == 'y' or _vol_info_ok != 'y':
+            if _para_dict['force_update'] == 'y' or _para_dict['search_mode'] == 'y' or _vol_info_ok != 'y':
                 if not _driver.update_vol_info(_xml_doc, **_para_dict):
                     _down_info['msg'] = _('Update vol info error')
                     raise RuntimeError(_down_info['msg'])
 
             # 解析网页获取每个卷的文件
-            if _para_dict['force_update'] == 'y' or _file_info_ok != 'y':
+            if _para_dict['force_update'] == 'y' or _para_dict['search_mode'] == 'y' or _file_info_ok != 'y':
                 if not _driver.update_file_info(_xml_doc, **_para_dict):
                     _down_info['msg'] = _('Update files info error')
                     raise RuntimeError(_down_info['msg'])
@@ -488,19 +495,28 @@ class ComicsDownCmd(CmdBaseFW):
             # 循环处理下载任务, 在有失败的情况重新执行
             while True:
                 try:
-                    _downtool = DownTool(_xml_doc, **para_dict)
+                    # 重置信息
+                    _down_info['task'] = 0
+                    _down_info['task_fail'] = 0
+                    _down_info['msg'] = ''
+
+                    # 执行下载
+                    _downtool = DownTool(_xml_doc, **_para_dict)
                     _downtool.start_down_file()
 
                     # 正常执行完成，检查是否已完成
-                    if para_dict['auto_redo'] == 'y' and _down_info['status'] != 'done':
+                    if _para_dict['auto_redo'] == 'y' and _down_info['task_fail'] > 0:
                         time.sleep(0.01)
                         continue
+
+                    # 退出处理
+                    break
                 except:
                     print('%s[%s]:\n%s' % (
-                        _('start downlong file error'), para_dict['name'],
+                        _('start downlong file error'), _para_dict['name'],
                         traceback.format_exc()
                     ))
-                    if para_dict['auto_redo'] == 'y':
+                    if _para_dict['auto_redo'] == 'y':
                         time.sleep(0.01)
                         continue
                     else:

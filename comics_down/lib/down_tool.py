@@ -55,6 +55,7 @@ __PUBLISH__ = '2020.02.29'  # 发布日期
 #             name : 卷名(也是卷目录名)
 #             url : 目录对应的浏览url
 #             status : 下载状态, listing, downloading, done
+#             file_num : 最大文件号
 #             files : 要下载的文件清单
 #                 file_[num] : 文件标识
 #                     name : 文件名
@@ -136,7 +137,7 @@ class DownTool(object):
 
             # 保存文件
             if not os.path.exists(_path):
-                FileTool.create_dir(_path)
+                FileTool.create_dir(_path, exist_ok=True)
 
             _xml_doc.save(
                 file=_conf_file, encoding='utf-8', pretty_print=True
@@ -175,6 +176,7 @@ class DownTool(object):
         xml_doc.set_value('%s/name' % _xpath, vol_name)
         xml_doc.set_value('%s/url' % _xpath, url)
         xml_doc.set_value('%s/status' % _xpath, status)
+        xml_doc.set_value('%s/file_num' % _xpath, '0')
 
         # 设置字典映射关系
         _vol_num_dict = xml_doc.get_value('/down_task/info/vol_num_dict', default='')
@@ -187,7 +189,7 @@ class DownTool(object):
         xml_doc.set_value('/down_task/info/vol_num_dict', str(_vol_num_dict))
 
         # 保存
-        xml_doc.save()
+        xml_doc.save(pretty_print=True)
 
         # 返回处理结果
         return _vol_num
@@ -234,6 +236,10 @@ class DownTool(object):
         """
         启动下载文件处理
         """
+        # 启动任务时重新获取所有文件数量
+        self.down_info['files'] = int(self.xml_doc.get_value('/down_task/info/files'))
+        self.down_info['success'] = int(self.xml_doc.get_value('/down_task/info/success'))
+
         # 将下载任务放入队列
         self._add_down_task_to_queue()
 
@@ -249,7 +255,7 @@ class DownTool(object):
             run_args=(self.down_queue, ),
             task_queue=self.down_queue,
             maxsize=int(self.para_dict['job_down_worker']),
-            worker_overtime=float(self.para_dict['down_worker_overtime']),
+            worker_overtime=float(self.para_dict['down_overtime']),
             replace_overtime_worker=True,
             sharedict_class=ThreadParallelShareDict,
             parallel_lock_class=ThreadParallelLock,
@@ -272,11 +278,9 @@ class DownTool(object):
         """
         检查当前下载情况并判断是否要更新下载状态
         """
-        if self.down_queue.empty:
+        if self.down_queue.empty():
             # 已经没有下载文件了，先更新数据
-            self.xml_doc.set_value('/down_task/info/files', str(self.down_info['files']))
             self.xml_doc.set_value('/down_task/info/success', str(self.down_info['success']))
-            self.xml_doc.set_value('/down_task/info/fail', str(self.down_info['fail']))
 
             if self.down_info['files'] == self.down_info['success'] and self.listing_vol == 0:
                 # 任务已完成
@@ -292,7 +296,7 @@ class DownTool(object):
                 self.down_info['msg'] = _('no files for download, but job not done!')
 
             # 保存
-            self.xml_doc.save()
+            self.xml_doc.save(pretty_print=True)
             return False
         else:
             return True
@@ -328,7 +332,10 @@ class DownTool(object):
             _vol_status = self.xml_doc.get_value('/down_task/down_list/%s/status' % _vol_num)
 
             if _vol_status == 'listing':
+                # 文件清单没有完成处理
                 self.listing_vol += 1
+                continue
+
             elif _vol_status == 'done':
                 # 已完成，不处理
                 continue
@@ -356,13 +363,16 @@ class DownTool(object):
                         _file_list[_file]['url'], _file_list[_file]['downtype']]
                 )
 
+                # 添加到任务统计
+                self.down_info['task'] += 1
+
                 # 添加到卷的统计信息中
                 self.down_vol_info[_vol_num]['down'] += 1
 
             # 再次判断一下是否全部完成
             if self.down_vol_info[_vol_num]['down'] == 0:
                 self.xml_doc.set_value('/down_task/down_list/%s/status' % _vol_num, 'done')
-                self.xml_doc.save()
+                self.xml_doc.save(pretty_print=True)
 
     def _down_worker_fun(self, q, ):
         """
@@ -373,7 +383,6 @@ class DownTool(object):
 
         try:
             _task = q.get(block=False)
-            self.down_count += 1
         except:
             # 没有取到任务
             time.sleep(1)
@@ -393,18 +402,19 @@ class DownTool(object):
                 FileTool.remove_file(_save_file)
 
             if not os.path.exists(_save_path):
-                FileTool.create_dir(_save_path)
+                FileTool.create_dir(_save_path, exist_ok=True)
 
             # 执行下载
             if _task[5] == 'ftp':
                 # ftp方式，直接使用wget方式下载
-                wget.download(_url, out=_save_file)
+                wget.download(_url, out=_save_file, bar=None)
             else:
                 NetTool.download_http_file(
                     _url, filename=_save_file, is_resume=(self.para_dict['use_break_down'] == 'y'),
                     connect_timeout=float(self.para_dict['overtime']),
                     retry=int(self.para_dict['connect_retry']),
-                    verify=(self.para_dict['verify'] == 'y')
+                    verify=(self.para_dict['verify'] == 'y'),
+                    show_rate=(self.para_dict['show_rate'] == 'y')
                 )
 
             # 下载成功，更新下载结果
@@ -414,9 +424,13 @@ class DownTool(object):
                     '/down_task/down_list/%s/files/%s/status' % (_task[0], _task[1]),
                     'done', debug=True
                 )
-                self.xml_doc.save()
                 self.down_info['success'] += 1
                 self.down_vol_info[_task[0]]['success'] += 1
+                self.xml_doc.set_value(
+                    '/down_task/info/success',
+                    str(self.down_info['success']), debug=True
+                )
+                self.xml_doc.save(pretty_print=True)
 
                 if self.down_vol_info[_task[0]]['success'] == self.down_vol_info[_task[0]]['down']:
                     # 当前卷下载任务已经处理完成
@@ -424,7 +438,7 @@ class DownTool(object):
                         '/down_task/down_list/%s/status' % _task[0],
                         'done', debug=True
                     )
-                    self.xml_doc.save()
+                    self.xml_doc.save(pretty_print=True)
             finally:
                 self.lock.release()
 
@@ -436,7 +450,7 @@ class DownTool(object):
             print(traceback.format_exc())
             self.lock.acquire()
             try:
-                self.down_info['fail'] += 1
+                self.down_info['task_fail'] += 1
                 self.xml_doc.set_value(
                     '/down_task/down_list/%s/files/%s/status' % (_task[0], _task[1]),
                     'err'
@@ -445,7 +459,7 @@ class DownTool(object):
                     '/down_task/error/%s/files/%s/url' % (_task[0], _task[1]),
                     _url, debug=True
                 )
-                self.xml_doc.save()
+                self.xml_doc.save(pretty_print=True)
             except:
                 print('%s:\n%s' % (_('Update down config file error'), traceback.format_exc()))
             finally:

@@ -28,10 +28,11 @@
     <shell_cmd_name>comics-down</shell_cmd_name>
     <version>0.1.0</version>
     <language>zh_cn</language>
-    <driver_path/>
+    <driver_path>../private_driver</driver_path>
+    <default_save_path>../temp</default_save_path>
     <i18n/>
     <shell_encoding>GBK</shell_encoding>
-    <message>comics-down/&gt; </message>
+    <message>comics-down /&gt;</message>
     <shell_cmd_help>{
         "en": [
             "",
@@ -432,15 +433,17 @@
                     "encoding": [],
                     "force_update": ["y", "n"],
                     "job_down_worker": [],
-                    "down_worker_overtime": [],
+                    "down_overtime": [],
                     "use_break_down": ["y", "n"],
                     "overtime": [],
                     "connect_retry": [],
                     "verify": ["y", "n"],
                     "webdriver": ["Chrome", "Firefox", "Ie", "Edge", "Safari", "PhantomJS"],
-                    "webdriver_wait_all_loaded": ["y", "n"],
-                    "webdriver_overtime": [],
-                    "webdriver_headless": ["y", "n"]
+                    "wd_wait_all_loaded": ["y", "n"],
+                    "wd_overtime": [],
+                    "wd_headless": ["y", "n"],
+                    "search_mode": ["y", "n"],
+                    "show_rate": ["y", "n"]
                 }
             }
             </cmd_para>
@@ -458,7 +461,7 @@
                         "    encoding : page encoding, default utf-8",
                         "    force_update : if force to update vol info (y/n), can use to get new vol when last job is done, default n",
                         "    job_down_worker : download worker number of each job, default 10",
-                        "    down_worker_overtime : the download worker overtime, sec，default 300",
+                        "    down_overtime : the download worker overtime, sec，default 300",
                         "    use_break_down : try use break_continue to download files (y/n)，default y",
                         "    overtime : overtime when connect to web page, sec，default 30",
                         "    connect_retry : retry time when connect fail, default 3",
@@ -482,16 +485,18 @@
                         "    encoding : 网页编码，默认为utf-8",
                         "    force_update : 是否强制更新卷信息(y/n)，对于已完成的任务可以重新获取卷信息，默认为n",
                         "    job_down_worker : 每个任务开启的文件并行下载工作数量，默认为10",
-                        "    down_worker_overtime : 下载工作线程超时时间，单位为秒，默认300秒",
+                        "    down_overtime : 下载工作线程超时时间，单位为秒，默认300秒",
                         "    use_break_down : 尝试使用文件下载断点续传(y/n)，默认为y",
                         "    overtime : 连接网站的超时时间，单位为秒，默认30秒",
                         "    connect_retry : 连接网站失败自动重试次数，默认3次",
                         "    verify : 打开网页是否进行证书验证(y/n)，默认y",
                         "    remove_wget_tmp : 删除wget下载失败时的临时文件(y/n), 默认为y",
                         "    webdriver : 某些网站要使用webdriver方式获取，指定webdriver的类型",
-                        "    webdriver_wait_all_loaded : webdriver情况下是否等待页面装载完(y/n)，不传代表不处理, n代表使用条件判断",
-                        "    webdriver_overtime : webdriver情况下的超时时间，单位为秒，默认30秒",
-                        "    webdriver_headless : webdriver情况下是否使用无浏览器形式(y/n)，默认n",
+                        "    wd_wait_all_loaded : webdriver情况下是否等待页面装载完(y/n)，n代表使用条件判断, 默认n",
+                        "    wd_overtime : webdriver情况下的超时时间，单位为秒，默认30秒",
+                        "    wd_headless : webdriver情况下是否使用无浏览器形式(y/n)，默认n",
+                        "    search_mode : 是否启动搜索模式(y/n), 该模式会重新遍历一次所有资源，对于已下载过的文件不再下载",
+                        "    show_rate : 是否显示单文件下载进度(wget模式), y/n，默认n",
                         "",
                         "示例: download url=xxx",
                         ""

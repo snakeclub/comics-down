@@ -23,8 +23,10 @@
     "Update vol info error": "更新卷信息失败",
     "Get file info error": "获取文件信息失败",
     "Update files info error": "更新文件信息失败",
-    "no files for download, but job not done!": "没有文件待下载，单任务未完成",
+    "no files for download, but job not done!": "没有文件待下载，但任务未完成",
     "DownLoad Sucess": "下载成功",
     "Update down config file error": "更新下载配置文件失败",
-    "Download Failed": "下载失败"
+    "Download Failed": "下载失败",
+    "not driver for the website [$1]": "没有该网站的下载驱动 [$1]",
+    "Get file info error: no file found!": "获取文件信息失败：没有找到文件"
 }

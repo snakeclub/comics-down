@@ -84,10 +84,14 @@ class BaseDriverFW(object):
                 # 更新卷信息及文件信息处理为未完成
                 xml_doc.set_value('/down_task/info/vol_info_ok', 'n')
                 xml_doc.set_value('/down_task/info/file_info_ok', 'n')
-                xml_doc.save()
+                xml_doc.save(pretty_print=True)
 
                 _url = para_dict['url']
-                _vol_next_url = xml_doc.get_value('/down_task/info/vol_next_url')
+                _vol_next_url = ''
+                if not (para_dict['search_mode'] == 'y'):
+                    # 如果是搜索模式，从头开始找卷信息
+                    _vol_next_url = xml_doc.get_value('/down_task/info/vol_next_url')
+
                 if _vol_next_url is not None and _vol_next_url != '':
                     _url = _vol_next_url
 
@@ -106,8 +110,17 @@ class BaseDriverFW(object):
                             _vol_num_dict = eval(_vol_num_dict)
 
                         if _vol_name in _vol_num_dict.keys():
-                            # 卷已经存在，无需处理
-                            continue
+                            # 卷已经存在
+                            if not (para_dict['search_mode'] == 'y'):
+                                # 非搜索模式，无需处理
+                                continue
+                            else:
+                                # 将卷信息重新打开为listing
+                                xml_doc.set_value(
+                                    '/down_task/down_list/%s/status' % _vol_num_dict[_vol_name],
+                                    'listing'
+                                )
+                                xml_doc.save(pretty_print=True)
                         else:
                             DownTool.add_vol_to_down_task_conf(
                                 xml_doc, _vol_name, _vol_url, status='listing'
@@ -115,7 +128,7 @@ class BaseDriverFW(object):
 
                     # 保存下一页信息
                     xml_doc.set_value('/down_task/info/vol_next_url', _vol_info[0])
-                    xml_doc.save()
+                    xml_doc.save(pretty_print=True)
 
                     # 检查是否有下一个url
                     if _vol_info[0] != '':
@@ -153,6 +166,9 @@ class BaseDriverFW(object):
 
         @return {bool} - 更新结果
         """
+        # 一开始就要获取文件数量
+        _files = int(xml_doc.get_value('/down_task/info/files'))
+
         # 通过循环支持持续执行
         while True:
             _vol_url = ''
@@ -161,7 +177,7 @@ class BaseDriverFW(object):
             try:
                 # 更新文件信息处理为未完成
                 xml_doc.set_value('/down_task/info/file_info_ok', 'n')
-                xml_doc.save()
+                xml_doc.save(pretty_print=True)
 
                 # 遍历所有卷，发现未完成的进行处理
                 _vol_num_dict = xml_doc.get_value('/down_task/info/vol_num_dict')
@@ -177,32 +193,58 @@ class BaseDriverFW(object):
                         continue
 
                     # 按卷url解析获取下载文件清单
+                    _vol_url = xml_doc.get_value('/down_task/down_list/%s/url' % _vol_num)
                     _file_info = cls._get_file_info(
                         _vol_url, _last_tran_para, **para_dict
                     )
+                    if len(_file_info[1]) == 0:
+                        raise RuntimeError(_('Get file info error: no file found!'))
 
                     # 将下载文件清单加入配置
-                    _file_num = 0
+                    _file_num = int(xml_doc.get_value(
+                        '/down_task/down_list/%s/file_num' % _vol_num))
+                    _file_add_num = 0
                     for _file in _file_info[1].keys():
+                        # 检查文件url是否已经存在
+                        _file_exist = False
                         _real_file_name = 'file_%d' % _file_num
-                        _file_num += 1
-                        DownTool.add_file_to_down_task_conf(
-                            xml_doc, _vol_num, _real_file_name,
-                            DownTool.path_char_replace(_file),
-                            _file_info[1][_file][0],
-                            _file_info[1][_file][1],
-                        )
+
+                        if para_dict['search_mode'] == 'y':
+                            # 搜索模式，从所有文件url判断
+                            if xml_doc.get_value("//url[text()='%s']" % _file_info[1][_file][0]) != '':
+                                # 找到文件已存在
+                                _file_exist = True
+                        else:
+                            # 非搜索模式，仅判断当前卷
+                            if xml_doc.get_value("/down_task/down_list/%s/files/%s/url[text()='%s']" % (_vol_num, _real_file_name, _file_info[1][_file][0])) != '':
+                                # 找到文件已存在
+                                _file_exist = True
+
+                        if not _file_exist:
+                            # 文件不存在，新增
+                            _file_num += 1
+                            _file_add_num += 1
+                            DownTool.add_file_to_down_task_conf(
+                                xml_doc, _vol_num, _real_file_name,
+                                DownTool.path_char_replace(_file),
+                                _file_info[1][_file][0],
+                                _file_info[1][_file][1],
+                            )
+
+                    # 更新_last_tran_para
+                    _last_tran_para = _file_info[0]
 
                     # 处理完更新卷状态及文件总数
+                    xml_doc.set_value('/down_task/down_list/%s/file_num' % _vol_num, str(_file_num))
                     xml_doc.set_value('/down_task/down_list/%s/status' % _vol_num, 'downloading')
-                    _files = int(xml_doc.get_value('/down_task/info/files'))
-                    _files += _file_num
+                    _files += _file_add_num
                     xml_doc.set_value('/down_task/info/files', str(_files))
-                    xml_doc.save()
+                    xml_doc.save(pretty_print=True)
 
                 # 全部文件清单处理完成
+                xml_doc.set_value('/down_task/info/files', str(_files))
                 xml_doc.set_value('/down_task/info/file_info_ok', 'y')
-                xml_doc.save()
+                xml_doc.save(pretty_print=True)
                 return True
             except:
                 print('%s[%s][%s][%s]:\n%s' % (
@@ -245,12 +287,12 @@ class BaseDriverFW(object):
         raise NotImplementedError()
 
     @classmethod
-    def _get_vol_info(cls, url: str, **para_dict):
+    def _get_vol_info(cls, index_url: str, **para_dict):
         """
         获取漫画的卷列表信息
         (需继承类实现)
 
-        @param {str} url - 漫画所在目录索引的url
+        @param {str} index_url - 漫画所在目录索引的url
         @param {dict} para_dict - 扩展参数, 任务的执行参数都会传进来
 
         @return {list} - 卷信息数组
