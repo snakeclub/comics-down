@@ -23,7 +23,8 @@ A command line tool for download comics from website.""".strip()
 DEPENDENCIES = [
     'HiveNetLib>=0.7.5',
     'prompt-toolkit>=2.0.0',
-    'beautifulsoup4'
+    'beautifulsoup4',
+    'PyExecJS>=1.5.1'
 ]
 
 # DEPENDENCIES = []

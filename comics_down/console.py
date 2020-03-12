@@ -31,10 +31,12 @@ __PUBLISH__ = '2019.12.3'  # 发布日期
 def main(**kwargs):
     # 判断是直接通过命令行执行, 还是通过控制台
     _cmd_opts = RunTool.get_kv_opts()
-    if len(sys.argv) > 0 and not ('help' in _cmd_opts.keys() or 'shell_cmd' in _cmd_opts.keys() or 'shell_cmdfile' in _cmd_opts.keys()):
+    if len(sys.argv) > 1 and not ('help' in _cmd_opts.keys() or 'shell_cmd' in _cmd_opts.keys() or 'shell_cmdfile' in _cmd_opts.keys()):
         # 有命令参数，但是不是外部命令行的标准参数，则认为是在外部命令行执行，将其转换为shell_cmd模式
-        _shell_cmd = 'shell_cmd="download %s"' % ' '.join(sys.argv)
+        sys.argv.remove('console.py')
+        _shell_cmd = 'shell_cmd=["download %s"]' % ' '.join(sys.argv).replace('\\', '\\\\')
         sys.argv.clear()
+        sys.argv.append('console.py')
         sys.argv.append(_shell_cmd)
 
     # 通过控制台执行

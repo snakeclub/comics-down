@@ -16,7 +16,7 @@ import sys
 import time
 import threading
 import traceback
-import wget
+import HiveNetLib.base_tools.wget as wget
 from HiveNetLib.base_tools.run_tool import RunTool
 from HiveNetLib.base_tools.file_tool import FileTool
 from HiveNetLib.base_tools.net_tool import NetTool
@@ -231,6 +231,7 @@ class DownTool(object):
         self.down_vol_info = dict()  # 用于登记每个卷下载图片数的字典
         self.down_queue = MemoryQueue()  # 下载下载任务的队列
         self.down_info = RunTool.get_global_var('JOB_RESULT')[self.para_dict['name']]
+        self.down_driver_dict = RunTool.get_global_var('DOWN_DRIVER_DICT')
 
     def start_down_file(self):
         """
@@ -395,7 +396,8 @@ class DownTool(object):
                 _file_name = os.path.split(_url)[1]
 
             _save_file = os.path.join(
-                self.para_dict['path'], self.para_dict['name'], _task[2], _file_name
+                self.para_dict['path'], self.para_dict['name'], _task[2].replace(
+                    '{$path_split$}', '/'), _file_name
             )
             _save_path = os.path.split(_save_file)[0]
             if os.path.exists(_save_file):
@@ -405,17 +407,12 @@ class DownTool(object):
                 FileTool.create_dir(_save_path, exist_ok=True)
 
             # 执行下载
-            if _task[5] == 'ftp':
-                # ftp方式，直接使用wget方式下载
-                wget.download(_url, out=_save_file, bar=None)
-            else:
-                NetTool.download_http_file(
-                    _url, filename=_save_file, is_resume=(self.para_dict['use_break_down'] == 'y'),
-                    connect_timeout=float(self.para_dict['overtime']),
-                    retry=int(self.para_dict['connect_retry']),
-                    verify=(self.para_dict['verify'] == 'y'),
-                    show_rate=(self.para_dict['show_rate'] == 'y')
-                )
+            if _task[5] not in self.down_driver_dict.keys():
+                # 不支持的下载类型
+                raise RuntimeError(_('not support downtype [$1]', _task[5]))
+
+            _down_class = self.down_driver_dict[_task[5]]
+            _down_class.download(_url, _save_file, **self.para_dict)
 
             # 下载成功，更新下载结果
             self.lock.acquire()

@@ -298,7 +298,9 @@ class BaseDriverFW(object):
         @return {list} - 卷信息数组
             [0] - vol_next_url，传入下一页的url，如果没有下一页，传空
             [1] - 卷信息字典(dict), key为卷名，value为浏览该卷漫画的url
-            注：应用会根据vol_next_url判断要不要循环获取卷信息
+            注：
+            (1)应用会根据vol_next_url判断要不要循环获取卷信息
+            (2)卷名可以通过标签‘{$path_split$}’来设置卷保存的子目录
         """
         raise NotImplementedError()
 

@@ -29,6 +29,7 @@
     <version>0.1.0</version>
     <language>zh_cn</language>
     <driver_path>../private_driver</driver_path>
+    <down_driver_path/>
     <default_save_path>../temp</default_save_path>
     <i18n/>
     <shell_encoding>GBK</shell_encoding>
@@ -338,21 +339,51 @@
             </cmd_para>
             <help>{
                 "en": [
-                    "Set website download driver search path",
+                    "Set website driver search path",
                     "",
                     "set_driver_path path",
-                    "    path : the website download driver search path",
+                    "    path : the website driver search path",
                     "",
                     "demo: set_driver_path d:\\test\\",
                     ""
                 ],
                 "zh_cn": [
-                    "设置网站下载驱动的搜索路径",
+                    "设置网站驱动的搜索路径",
                     "",
                     "set_driver_path path",
-                    "    path : 要设置的网站下载驱动搜索目录",
+                    "    path : 要设置的网站驱动搜索目录",
                     "",
                     "示例: set_driver_path d:\\test\\",
+                    ""
+                ]
+            }
+            </help>
+        </cmd>
+        <cmd>
+            <command>set_down_driver_path</command>
+            <module_name>comics_down.lib.comics_down_cmd</module_name>
+            <class_name>ComicsDownCmd</class_name>
+            <extend_path/>
+            <init_para/>
+            <cmd_para>{}
+            </cmd_para>
+            <help>{
+                "en": [
+                    "Set download driver search path",
+                    "",
+                    "set_down_driver_path path",
+                    "    path : the download driver search path",
+                    "",
+                    "demo: set_down_driver_path d:\\test\\",
+                    ""
+                ],
+                "zh_cn": [
+                    "设置下载驱动的搜索路径",
+                    "",
+                    "set_down_driver_path path",
+                    "    path : 要设置的下载驱动搜索目录",
+                    "",
+                    "示例: set_down_driver_path d:\\test\\",
                     ""
                 ]
             }

@@ -14,6 +14,7 @@
     "Path '$1' not exists!": "路径'$1'不存在!",
     "Driver path set to '$1'": "网站下载驱动库路径设置为 '$1'!",
     "Import drivers error, path '$1' not exists!": "加载下载驱动失败, 路径 '$1' 不存在！",
+    "Import down drivers error, path '$1' not exists!": "加载文件下载驱动失败, 路径 '$1' 不存在！",
     "support website list": "支持网站列表",
     "Default save path set to '$1'": "默认保存路径设置为'$1'",
     "Download get exception": "下载出现异常",
@@ -28,5 +29,6 @@
     "Update down config file error": "更新下载配置文件失败",
     "Download Failed": "下载失败",
     "not driver for the website [$1]": "没有该网站的下载驱动 [$1]",
-    "Get file info error: no file found!": "获取文件信息失败：没有找到文件"
+    "Get file info error: no file found!": "获取文件信息失败：没有找到文件",
+    "not support downtype [$1]": "不支持的下载类型 [$1]"
 }

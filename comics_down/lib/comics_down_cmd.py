@@ -38,6 +38,7 @@ sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), os.path.pardir, os.path.pardir)))
 from comics_down.lib.down_tool import DownTool
 from comics_down.lib.driver_fw import BaseDriverFW
+from comics_down.lib.down_driver_fw import BaseDownDriverFW
 
 
 __MOUDLE__ = 'mediawiki_cmd'  # 模块名
@@ -105,6 +106,46 @@ class ComicsDownCmd(CmdBaseFW):
         # 完成处理
         return True
 
+    @classmethod
+    def import_down_drivers(cls, path: str):
+        """
+        加载文件下载驱动
+
+        @param {str} path - 要加载驱动的路径
+
+        @return {bool} - 加载结果
+        """
+        _path = os.path.realpath(path)
+        if not os.path.exists(_path):
+            print(_("Import down drivers error, path '$1' not exists!", _path))
+            return False
+
+        # 全局变量中存储加载字典
+        _driver_dict = RunTool.get_global_var('DOWN_DRIVER_DICT')
+        if _driver_dict is None:
+            _driver_dict = dict()  # key为类型，value为类对象
+            RunTool.set_global_var('DOWN_DRIVER_DICT', _driver_dict)
+
+        # 遍历文件执行加载
+        _file_list = FileTool.get_filelist(path=_path, regex_str=r'.*\.py$', is_fullname=False)
+        for _file in _file_list:
+            if _file == '__init__.py':
+                continue
+
+            # 执行加载
+            _module = ImportTool.import_module(_file[0: -3], extend_path=_path, is_force=True)
+            _clsmembers = inspect.getmembers(_module, inspect.isclass)
+            for (_class_name, _class) in _clsmembers:
+                if not hasattr(_class, 'get_supports') or _class == BaseDownDriverFW:
+                    # 通过get_supports来判断是否驱动类
+                    continue
+
+                # 类对象加入到字典中
+                _driver_dict[_class.get_supports()] = _class
+
+        # 完成处理
+        return True
+
     #############################
     # 构造函数，在里面增加函数映射字典
     #############################
@@ -121,7 +162,8 @@ class ComicsDownCmd(CmdBaseFW):
             'set_driver_path': self._set_driver_path_cmd_dealfun,
             'support': self._support_cmd_dealfun,
             'set_default_save_path': self._set_default_save_path_cmd_dealfun,
-            'download': self._download_cmd_dealfun
+            'download': self._download_cmd_dealfun,
+            'set_down_driver_path': self._set_down_driver_path_cmd_dealfun
         }
         self._console_global_para = RunTool.get_global_var('CONSOLE_GLOBAL_PARA')
 
@@ -145,6 +187,18 @@ class ComicsDownCmd(CmdBaseFW):
             self.import_drivers(_driver_path)
 
         self.driver_dict = RunTool.get_global_var('DRIVER_DICT')
+
+        # 装载默认文件下载驱动
+        self.import_down_drivers(
+            os.path.join(self._console_global_para['execute_file_path'], 'down_driver')
+        )
+
+        # 装载自定义的文件下载驱动
+        _down_driver_path = os.path.realpath(_config_xml.get_value('/console/down_driver_path'))
+        if _down_driver_path != '':
+            self.import_down_drivers(_down_driver_path)
+
+        self.down_driver_dict = RunTool.get_global_var('DOWN_DRIVER_DICT')
 
         # 下载需要的公共变量
         self.job_queue = MemoryQueue()
@@ -231,6 +285,53 @@ class ComicsDownCmd(CmdBaseFW):
 
         prompt_obj.prompt_print(_("Driver path set to '$1'",
                                   self._console_global_para['driver_path']))
+
+        # 结束
+        return _result
+
+    def _set_down_driver_path_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+        """
+        设置下载驱动的搜索路径
+
+        @param {string} message='' - prompt提示信息
+        @param {string} cmd - 执行的命令key值
+        @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
+        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
+        @param {kwargs} - 传入的主进程的初始化kwargs对象
+
+        @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
+            print_str属性要求框架进行打印处理
+        """
+        _result = CResult(code='00000')
+
+        _path = cmd_para.strip()
+        if _path == '':
+            prompt_obj.prompt_print(_('path must be not null'))
+            return _result
+
+        self._console_global_para['down_driver_path'] = os.path.realpath(_path)
+        if not os.path.exists(self._console_global_para['down_driver_path']):
+            prompt_obj.prompt_print(
+                _("Path '$1' not exists!", self._console_global_para['down_driver_path'])
+            )
+            return _result
+
+        # 修改配置文件中的驱动搜索路径
+        _config_xml = SimpleXml(
+            self._console_global_para['config_file'],
+            encoding=self._console_global_para['config_encoding']
+        )
+        _config_xml.set_value(
+            '/console/down_driver_path',
+            _path
+        )
+        _config_xml.save()
+
+        # 加载支持的下载驱动
+        self.import_down_drivers(self._console_global_para['down_driver_path'])
+
+        prompt_obj.prompt_print(_("Down driver path set to '$1'",
+                                  self._console_global_para['down_driver_path']))
 
         # 结束
         return _result
@@ -480,6 +581,16 @@ class ComicsDownCmd(CmdBaseFW):
             _vol_info_ok = _xml_doc.get_value('/down_task/info/vol_info_ok')
             _file_info_ok = _xml_doc.get_value('/down_task/info/file_info_ok')
 
+            # 判断驱动是否为空，如果为空有可能是因为传了name进来
+            if _driver is None:
+                _url_info = urlparse(_para_dict['url'])
+                _site = _url_info.netloc.upper()
+                if _site not in self.driver_dict['site_route'].keys():
+                    _down_info['msg'] = _('not driver for the website [$1]', _site)
+                    raise RuntimeError(_down_info['msg'])
+
+                _driver = self.driver_dict['class'][self.driver_dict['site_route'][_site]]
+
             # 解析网页获取卷信息 - 在驱动框架已处理了自动重试
             if _para_dict['force_update'] == 'y' or _para_dict['search_mode'] == 'y' or _vol_info_ok != 'y':
                 if not _driver.update_vol_info(_xml_doc, **_para_dict):
@@ -542,7 +653,10 @@ class ComicsDownCmd(CmdBaseFW):
         try:
             _job = q.get(block=False)
             _para_dict = copy.deepcopy(_job[1])
-            _para_dict['url'] = _job[0]
+            _job_infos = _job[0].split('|')
+            _para_dict['url'] = _job_infos[0]
+            if len(_job_infos) > 1:
+                _para_dict['name'] = _job_infos[1]
             self._download_job_start(_para_dict, prompt_obj=_job[2], **_job[3])
         except:
             # 没有取到任务
