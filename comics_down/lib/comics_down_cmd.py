@@ -172,7 +172,14 @@ class ComicsDownCmd(CmdBaseFW):
             self._console_global_para['config_file'],
             encoding=self._console_global_para['config_encoding']
         )
-        _driver_path = os.path.realpath(_config_xml.get_value('/console/driver_path'))
+        _driver_path = _config_xml.get_value('/console/driver_path')
+        if _driver_path != '':
+            _driver_path = os.path.realpath(
+                os.path.join(
+                    os.path.realpath(self._console_global_para['execute_file_path']),
+                    _config_xml.get_value('/console/driver_path')
+                )
+            )
         self._console_global_para['driver_path'] = _driver_path
         self._console_global_para['default_save_path'] = _config_xml.get_value(
             '/console/default_save_path')
@@ -194,8 +201,14 @@ class ComicsDownCmd(CmdBaseFW):
         )
 
         # 装载自定义的文件下载驱动
-        _down_driver_path = os.path.realpath(_config_xml.get_value('/console/down_driver_path'))
+        _down_driver_path = _config_xml.get_value('/console/down_driver_path')
         if _down_driver_path != '':
+            _down_driver_path = os.path.realpath(
+                os.path.join(
+                    os.path.realpath(self._console_global_para['execute_file_path']),
+                    _down_driver_path
+                )
+            )
             self.import_down_drivers(_down_driver_path)
 
         self.down_driver_dict = RunTool.get_global_var('DOWN_DRIVER_DICT')
@@ -537,6 +550,7 @@ class ComicsDownCmd(CmdBaseFW):
             'wd_wait_all_loaded': 'n',
             'wd_overtime': '30',
             'wd_headless': 'n',
+            'wd_min': 'n',
             'search_mode': 'n',
             'show_rate': 'n'
         }

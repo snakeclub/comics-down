@@ -19,6 +19,7 @@ import time
 import traceback
 from HiveNetLib.simple_i18n import _
 from HiveNetLib.base_tools.net_tool import EnumWebDriverType
+from HiveNetLib.base_tools.file_tool import FileTool
 # 根据当前文件路径将包路径纳入，在非安装的情况下可以引用到
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), os.path.pardir, os.path.pardir)))
@@ -224,9 +225,15 @@ class BaseDriverFW(object):
                             # 文件不存在，新增
                             _file_num += 1
                             _file_add_num += 1
+                            _fix_file_name = DownTool.path_char_replace(_file)
+                            if len(_fix_file_name) > 100:
+                                # 限制文件名长度
+                                _ext = FileTool.get_file_ext(_fix_file_name)
+                                _fix_file_name = _fix_file_name[0: 99-len(_ext)] + '.' + _ext
+
                             DownTool.add_file_to_down_task_conf(
                                 xml_doc, _vol_num, _real_file_name,
-                                DownTool.path_char_replace(_file),
+                                _fix_file_name,
                                 _file_info[1][_file][0],
                                 _file_info[1][_file][1],
                             )

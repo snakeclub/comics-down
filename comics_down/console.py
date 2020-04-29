@@ -33,7 +33,7 @@ def main(**kwargs):
     _cmd_opts = RunTool.get_kv_opts()
     if len(sys.argv) > 1 and not ('help' in _cmd_opts.keys() or 'shell_cmd' in _cmd_opts.keys() or 'shell_cmdfile' in _cmd_opts.keys()):
         # 有命令参数，但是不是外部命令行的标准参数，则认为是在外部命令行执行，将其转换为shell_cmd模式
-        sys.argv.remove('console.py')
+        sys.argv.remove(sys.argv[0])
         _shell_cmd = 'shell_cmd=["download %s"]' % ' '.join(sys.argv).replace('\\', '\\\\')
         sys.argv.clear()
         sys.argv.append('console.py')

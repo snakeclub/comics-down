@@ -400,7 +400,7 @@ class DownTool(object):
                     '{$path_split$}', '/'), _file_name
             )
             _save_path = os.path.split(_save_file)[0]
-            if os.path.exists(_save_file):
+            if os.path.exists(_save_file) and os.path.isfile(_save_file):
                 FileTool.remove_file(_save_file)
 
             if not os.path.exists(_save_path):

@@ -24,7 +24,9 @@ DEPENDENCIES = [
     'HiveNetLib>=0.7.5',
     'prompt-toolkit>=2.0.0',
     'beautifulsoup4',
-    'PyExecJS>=1.5.1'
+    'PyExecJS>=1.5.1',
+    'Crypto',
+    'm3u8'
 ]
 
 # DEPENDENCIES = []
