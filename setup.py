@@ -63,7 +63,7 @@ setup(
         'Topic :: Software Development :: Libraries'
     ],
     entry_points={'console_scripts': [
-        "comicsdown = comics-down.console:main"
+        "comicsdown=comics_down.console:main"
     ]},
     # 此项需要，否则卸载时报windows error
     zip_safe=False
