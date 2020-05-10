@@ -447,6 +447,102 @@ class EddDriver(BaseDriverFW):
             elif _player_url_info.query.endswith('.mp4'):
                 # 'vd=https://gss3.baidu.com/6LZ0ej3k1Qd3ote6lo7D0j9wehsv/tieba-smallvideo/607272_c32fd7e6d6f83ad280c77bf3b9b6f004.mp4'
                 _filedict[_file_name+'.mp4'] = [_player_url_info.query[3:], 'http']
+            elif _player_url_info.netloc == '':
+                # 需要从动态iframe中获取
+                _browser = NetTool.get_webdriver_browser(
+                    common_options={
+                        'timeout': float(para_dict['wd_overtime']),
+                        'headless': (para_dict['wd_headless'] == 'y'),
+                        'wait_all_loaded': False,
+                        'until_menthod': EC.presence_of_element_located((By.ID, "zanpiancms_player")),
+                        'size_type': ('min' if para_dict['wd_min'] == 'y' else '')
+                    },
+                    webdriver_type=cls.get_webdriver_type(para_dict['webdriver']),
+                    driver_options=NO_IMG_CSS_DRIVER_OPTIONS
+                )
+                _retry = 0
+                while True:
+                    try:
+                        _html_source = NetTool.get_web_page_dom_code(
+                            _file_url,
+                            browser=_browser,
+                            common_options={
+                                'timeout': float(para_dict['wd_overtime']),
+                                'headless': (para_dict['wd_headless'] == 'y'),
+                                'wait_all_loaded': True,
+                                'quit': False,
+                                'size_type': ('min' if para_dict['wd_min'] == 'y' else '')
+                            },
+                            webdriver_type=cls.get_webdriver_type(para_dict['webdriver']),
+                            driver_options=NO_IMG_CSS_DRIVER_OPTIONS
+                        )
+                        # 成功执行，跳出循环
+                        break
+                    except:
+                        if _retry <= int(para_dict['connect_retry']):
+                            _retry += 1
+                            continue
+                        else:
+                            raise
+
+                # 等待10秒让页面加载完成
+                time.sleep(10)
+
+                # 通过WebDriver获取对象
+                _iframes = []
+                _break_time = 0
+                while True:
+                    _iframes = _browser.find_elements_by_tag_name("iframe")
+                    if len(_iframes) < 4:
+                        if _break_time >= 40:
+                            _browser.quit()
+                            raise RuntimeError('Get IFrame Error')
+                        time.sleep(0.5)
+                        _break_time += 1
+                        continue
+                    else:
+                        break
+
+                for _iframe in _iframes:
+                    _class = _iframe.get_attribute('class')
+                    _allow = _iframe.get_attribute('allowfullscreen')
+                    if _class == 'zanpiancms-play-iframe' and _allow == 'true':
+                        _browser.switch_to.frame(_iframes[1])
+                        break
+
+                _break_time = 0
+                while True:
+                    if _break_time >= 40:
+                        _browser.quit()
+                        raise RuntimeError('Get IFrame Error')
+
+                    _break_time += 1
+                    _iframes = _browser.find_elements_by_tag_name("iframe")
+                    if len(_iframes) < 1:
+                        pass
+                    else:
+                        _play = _iframes[0].get_attribute('play')
+                        _allow = _iframes[0].get_attribute('allowfullscreen')
+                        if _allow == 'true' and _play == 'false':
+                            _browser.switch_to.frame(_iframes[0])
+                            break
+                    time.sleep(0.5)
+
+                _html_source = _browser.page_source
+                _browser.quit()
+
+                # 获取地址
+                _soup_source = BeautifulSoup(_html_source, 'html.parser')
+                _real_src = _soup_source.find_all(
+                    'video', attrs={}
+                )[0]['src']
+                if _real_src[0: 2] == '//':
+                    _real_src = 'http:' + _real_src
+                elif _real_src[0: 4] != 'http':
+                    _real_src = 'http://' + _real_src
+
+                # 加入数组
+                _filedict[_file_name + ".mp4"] = [_real_src, 'http']
             elif _player_url_info.netloc in ('xs0xs.xyz'):
                 # 需要从动态iframe中获取
                 _retry = 0
@@ -549,7 +645,7 @@ if __name__ == '__main__':
     }
 
     # _para_dict['url'] = 'https://v.youku.com/v_show/id_XNDM3ODM0MDM2NA==.html?spm=a2hcb.12523958.m_4392_c_25192.d_2&s=d6bc38efbfbdefbfbdef&scm=20140719.manual.4392.show_d6bc38efbfbdefbfbdef'
-    _para_dict['url'] = 'http://www.edddh.com/vod/yishoumodudorohedoro/2-1.html'
+    _para_dict['url'] = 'http://www.edddh.com/vod/bdxiamuyourenzhangdi2ji/1-1.html'
 
     # _name = EddDriver.get_name_by_url(**_para_dict)
     # print('<>%s<>' % _name)
@@ -558,5 +654,5 @@ if __name__ == '__main__':
     # print(_vol_info)
 
     _file_info = EddDriver._get_file_info(
-        'http://www.edddh.com/vod/yishoumodudorohedoro/2-1.html', None, **_para_dict)
+        'http://www.edddh.com/vod/bdxiamuyourenzhangdi2ji/1-1.html', None, **_para_dict)
     print(_file_info)

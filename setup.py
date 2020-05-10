@@ -21,12 +21,13 @@ SHORT_DESCRIPTION = """
 A command line tool for download comics from website.""".strip()
 
 DEPENDENCIES = [
-    'HiveNetLib>=0.7.5',
+    'HiveNetLib>=0.8.0',
     'prompt-toolkit>=2.0.0',
     'beautifulsoup4',
     'PyExecJS>=1.5.1',
     'Crypto',
-    'm3u8'
+    'm3u8',
+    'selenium'
 ]
 
 # DEPENDENCIES = []
@@ -62,7 +63,7 @@ setup(
         'Topic :: Software Development :: Libraries'
     ],
     entry_points={'console_scripts': [
-        "comics-down = comics-down.console:main"
+        "comicsdown = comics-down.console:main"
     ]},
     # 此项需要，否则卸载时报windows error
     zip_safe=False

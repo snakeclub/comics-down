@@ -72,7 +72,7 @@ class M3u8Downloader(object):
                 # 只有文件名
                 flist.append('%s://%s/%s/%s' % (
                     _base_url_info.scheme, _base_url_info.netloc,
-                    _base_url_info.path, _file
+                    os.path.split(_base_url_info.path)[0], _file
                 ))
             else:
                 # 有文件路径，缺域名
@@ -241,6 +241,7 @@ class M3u8Downloader(object):
             return True
         except:
             # 下载失败
+            print('Download error: %s' % _url)
             print(traceback.format_exc())
             time.sleep(0.5)
             return False
@@ -254,7 +255,15 @@ if __name__ == '__main__':
            '发布日期：%s\n'
            '版本：%s' % (__MOUDLE__, __DESCRIPT__, __AUTHOR__, __PUBLISH__, __VERSION__)))
 
-    M3u8Downloader(
-        'd:/myfile.mp4', 'https://www7.laqddcc.com/hls/2019/11/26/OXUon3vn/playlist.m3u8',
-        process_num=1, is_resume=False
+    # M3u8Downloader(
+    #     'd:/myfile.mp4', 'https://www7.laqddcc.com/hls/2019/11/26/OXUon3vn/playlist.m3u8',
+    #     process_num=1, is_resume=False
+    # )
+    url = 'https://cdn-1.kkp2p.com/hls/2019/06/23/82pQs9yn/playlist.m3u8'
+    _base_url_info = urlparse(url)
+    print(
+        '%s://%s/%s/%s' % (
+            _base_url_info.scheme, _base_url_info.netloc,
+            os.path.split(_base_url_info.path)[0], 'haha.ts'
+        )
     )

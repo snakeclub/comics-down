@@ -439,7 +439,8 @@ class DownTool(object):
             finally:
                 self.lock.release()
 
-            print('%s[%s -> %s]: %s' % (_('DownLoad Sucess'), _task[0], _task[1], _url))
+            print('%s[%s -> %s -> %s]: %s' % (_('DownLoad Sucess'),
+                                              self.para_dict['name'], _task[0], _task[1], _url))
             time.sleep(1)
             return True
         except:
@@ -461,8 +462,8 @@ class DownTool(object):
                 print('%s:\n%s' % (_('Update down config file error'), traceback.format_exc()))
             finally:
                 self.lock.release()
-            print('%s[%s -> %s]: %s\n%s' % (_('Download Failed'),
-                                            _task[0], _task[1], _url, traceback.format_exc()))
+            print('%s[%s -> %s -> %s]: %s\n%s' % (_('Download Failed'), self.para_dict['name'],
+                                                  _task[0], _task[1], _url, traceback.format_exc()))
             time.sleep(1)
             return False
 
