@@ -27,7 +27,8 @@ DEPENDENCIES = [
     'PyExecJS>=1.5.1',
     'Crypto',
     'm3u8',
-    'selenium'
+    'selenium',
+    'mitmproxy==5.0.1'
 ]
 
 # DEPENDENCIES = []

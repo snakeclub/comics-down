@@ -19,6 +19,10 @@ from HiveNetLib.base_tools.file_tool import FileTool
 from HiveNetLib.base_tools.net_tool import NetTool
 from HiveNetLib.simple_queue import MemoryQueue
 from HiveNetLib.simple_parallel import ParallelPool, ThreadParallel, ThreadParallelLock, ThreadParallelShareDict
+# 根据当前文件路径将包路径纳入，在非安装的情况下可以引用到
+sys.path.append(os.path.abspath(os.path.join(
+    os.path.dirname(__file__), os.path.pardir, os.path.pardir)))
+from comics_down.down_driver.init_aria2 import Aria2Driver
 
 
 __MOUDLE__ = 'm3u8_downloader'  # 模块名
@@ -41,12 +45,14 @@ class M3u8Downloader(object):
     # 静态函数
     #############################
     @classmethod
-    def get_play_lists(cls, url, temp_save_file):
+    def get_play_lists(cls, url, temp_save_file, is_resume=False, exists_no_down=False):
         """
         从m3u8获取下载文件列表
 
         @param {str} url - m3u8文件的url
         @param {str} temp_save_file - 临时保存的文件
+        @param {bool} is_resume=False - 是否自动重试
+        @param {bool} exists_no_down=False - 如果文件已存在无需再下载
 
         @return {tuple} - 返回 flist, key
             flist {list} - 下载文件清单
@@ -55,15 +61,35 @@ class M3u8Downloader(object):
         flist = []
         key = ''
 
-        NetTool.download_http_file(
-            url, filename=temp_save_file, is_resume=False,
-            headers={'User-agent': 'Mozilla/5.0'},
-            connect_timeout=20, verify=False
-        )
+        print('m3u8_url: %s' % url)
+        if exists_no_down and os.path.exists(temp_save_file):
+            print('m3u8 file exists: %s' % temp_save_file)
+        else:
+            if os.path.exists(temp_save_file):
+                FileTool.remove_file(temp_save_file)
+
+            NetTool.download_http_file(
+                url, filename=temp_save_file, is_resume=is_resume,
+                headers={'User-agent': 'Mozilla/5.0'},
+                connect_timeout=20, verify=False
+            )
 
         _m3u8_obj = m3u8.load(temp_save_file)
 
         _base_url_info = urlparse(url)
+        if len(_m3u8_obj.files) == 0:
+            # 进行一次跳转
+            _new_url = _m3u8_obj.playlists[0].uri
+            if not _new_url.startswith('http') and _new_url.startswith('/'):
+                _new_url = '%s://%s/%s' % (
+                    _base_url_info.scheme, _base_url_info.netloc, _new_url
+                )
+            else:
+                _new_url = os.path.split(url)[0]+'/' + _new_url
+
+            print('new url: %s' % _new_url)
+            return cls.get_play_lists(_new_url, temp_save_file)
+
         for _file in _m3u8_obj.files:
             if _file.startswith('http://') or _file.startswith('https://'):
                 _base_url_info = urlparse(_file)
@@ -80,7 +106,58 @@ class M3u8Downloader(object):
                     _base_url_info.scheme, _base_url_info.netloc, _file
                 ))
 
+        print('\n'.join(flist))
         return flist, key
+
+    @classmethod
+    def hand_download(cls, save_file, url):
+        """
+        手工下载m3u8操作
+
+        @param {str} save_file - 要保存的文件名
+        @param {str} url - m3u8的url地址
+        """
+        # 保存路径
+        _path = os.path.split(save_file)[0]
+        _temp_path = os.path.join(
+            _path, FileTool.get_file_name_no_ext(save_file)
+        )
+        FileTool.create_dir(_temp_path, exist_ok=True)
+        _list_file = os.path.join(_temp_path, 'list.txt')
+
+        if not os.path.exists(_list_file):
+            # 下载m3u8文件并生成合并文件
+            _flielist, _key = cls.get_play_lists(
+                url, os.path.join(_temp_path, 'index.m3u8'), is_resume=True, exists_no_down=True
+            )
+
+            # 生成合并文件
+            with open(_list_file, 'w', encoding='utf-8') as f:
+                for _file in _flielist:
+                    f.write('file %s\r\n' % (
+                        os.path.join(
+                            _temp_path, os.path.split(_file)[1]
+                        ).replace('\\', '/')
+                    ))
+
+        # 检查文件是否齐全
+        with open(_list_file, 'r', encoding='utf-8') as f:
+            _lines = f.readlines()
+            for _line in _lines:
+                _line = _line.strip()
+                if _line != '' and not os.path.exists(_line[5:]):
+                    print('%s not exists!' % _line)
+                    return
+
+        # 全部完成了，合并文件
+        _shell = subprocess.call('ffmpeg -f concat -safe 0 -i "%s" -c copy "%s"' % (
+            os.path.realpath(_list_file), os.path.realpath(save_file)
+        ))
+        if _shell != 0:
+            raise RuntimeError('merge error')
+
+        # 合并成功，删除临时目录
+        FileTool.remove_dir(_temp_path)
 
     #############################
     # 构造函数
@@ -223,11 +300,18 @@ class M3u8Downloader(object):
             _file_name = os.path.split(_url)[1]
 
             # 下载文件
-            NetTool.download_http_file(
-                _url, filename=os.path.join(self.temp_path, _file_name),
-                is_resume=self.is_resume,
-                headers={'User-agent': 'Mozilla/5.0'},
-                connect_timeout=30, verify=False, retry=self.retry, show_rate=True
+            # NetTool.download_http_file(
+            #     _url, filename=os.path.join(self.temp_path, _file_name),
+            #     is_resume=self.is_resume,
+            #     headers={'User-agent': 'Mozilla/5.0'},
+            #     connect_timeout=30, verify=False, retry=self.retry, show_rate=True
+            # )
+
+            _para_dict = {
+                'down_overtime': '600'
+            }
+            Aria2Driver.download(
+                _url, os.path.join(self.temp_path, _file_name), **_para_dict
             )
 
             # 下载成功，更新下载结果
@@ -255,15 +339,19 @@ if __name__ == '__main__':
            '发布日期：%s\n'
            '版本：%s' % (__MOUDLE__, __DESCRIPT__, __AUTHOR__, __PUBLISH__, __VERSION__)))
 
-    # M3u8Downloader(
-    #     'd:/myfile.mp4', 'https://www7.laqddcc.com/hls/2019/11/26/OXUon3vn/playlist.m3u8',
-    #     process_num=1, is_resume=False
+
+    # M3u8Downloader.get_play_lists(
+    #     url='https://xxx/index.m3u8',
+    #     temp_save_file=r'D:\test_m3u8\test\playlist.m3u8',
+    #     is_resume=True, exists_no_down=True
     # )
-    url = 'https://cdn-1.kkp2p.com/hls/2019/06/23/82pQs9yn/playlist.m3u8'
-    _base_url_info = urlparse(url)
-    print(
-        '%s://%s/%s/%s' % (
-            _base_url_info.scheme, _base_url_info.netloc,
-            os.path.split(_base_url_info.path)[0], 'haha.ts'
-        )
+    # playlist.m3u8
+    # M3u8Downloader.hand_download(
+    #     r'E:\m3u8\xxx.mp4',
+    #     'https://xxx/index.m3u8'
+    # )
+
+    M3u8Downloader(
+        r'xxx.mp4', 'https://xxx/index.m3u8',
+        process_num=3, is_resume=True, retry=3
     )

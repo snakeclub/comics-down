@@ -66,13 +66,16 @@ class HttpDownDriver(BaseDownDriverFW):
         @param {str} save_file - 要保存的文件路径及文件名
         @param {dict} para_dict - 扩展参数, 任务的执行参数都会传进来
         """
+        _save_file = os.path.realpath(save_file)
         NetTool.download_http_file(
-            file_url, filename=save_file, is_resume=(para_dict['use_break_down'] == 'y'),
+            file_url, filename=FileTool.get_file_name(_save_file),
+            path=FileTool.get_file_path(_save_file),
+            is_resume=(para_dict.get('use_break_down', 'y') == 'y'),
             headers={'User-agent': 'Mozilla/5.0'},
-            connect_timeout=float(para_dict['overtime']),
-            retry=int(para_dict['connect_retry']),
-            verify=(para_dict['verify'] == 'y'),
-            show_rate=(para_dict['show_rate'] == 'y')
+            connect_timeout=float(para_dict.get('overtime', '30')),
+            retry=int(para_dict.get('connect_retry', '3')),
+            verify=(para_dict.get('verify', 'y') == 'y'),
+            show_rate=(para_dict.get('show_rate', 'n') == 'y')
         )
 
 
@@ -339,6 +342,6 @@ if __name__ == '__main__':
         'show_rate': 'n'
     }
 
-    ManhuaguiDownDriver.download(
-        'https://www.manhuagui.com//comic/18423/203289.html#p=61', 'd:\\01.jpg', **_para_dict
+    HttpDownDriver.download(
+        'http://chh.tebrobot.cn/py/images/wx.png', 'd:\\1.png', **_para_dict
     )
