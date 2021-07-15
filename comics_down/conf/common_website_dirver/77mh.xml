@@ -1,0 +1,92 @@
+<driver_config>
+    <!--
+        新新漫画网站的网站驱动配置, 标签名为主域名
+        remark : 网站说明
+        subsite : 该网站下可处理的子域名，为json格式的字符串，例如["","",...]
+        configs : 网站解析配置，标签名为配置类型，name-获取资源名，vol-获取卷信息，file-获取文件信息
+            is_html_code : type="bool", 是否使用网站静态代码
+            headers : 访问网站使用的http协议头，使用xml的key-value方式配置
+            roll_to_end : type="bool", 是否滚动至网页结尾，仅webdriver方式有效
+            until : 如果不等待所有页面加载完，通过xpath判断元素是否存在
+                例如: '//img[@id="dracga" and @style]' - 查找id为dracga且包含style属性的img对象
+            para_dict : 改变前端送入任务执行字典值的配置
+            scripts : type="list"，解析脚本数组，按脚本逐步执行, 标签为item，每个item为一步执行脚本
+                执行脚本格式是json数组形式["", "", ...]
+            sub_scripts : 子脚本定义
+                [子脚本标识名] : type="list", 子脚本标识名，标签为item，每个item为一步执行脚本
+    -->
+    <www.177mh.net>
+        <remark>新新漫画</remark>
+        <subsite>["www.77mh.co", "www.77mh.com", "www.77mh.de"]</subsite>
+        <configs>
+            <name>
+                <!-- 资源标题获取配置 -->
+                <is_html_code type="bool">true</is_html_code>
+                <headers></headers>
+                <roll_to_end type="bool">false</roll_to_end>
+                <until></until>
+                <scripts type="list">
+                    <item>["xpath", "//ul[@class=\"ar_list_coc\"]/li[1]/h1"]</item>
+                    <item>["set_to_var", "name", "el_info", ".text"]</item>
+                </scripts>
+                <sub_scripts>
+                </sub_scripts>
+            </name>
+            <!-- 资源卷信息获取配置-不获取不配置该节点，把当前页面当作卷页面即可 -->
+            <vol>
+                <is_html_code type="bool">true</is_html_code>
+                <headers></headers>
+                <roll_to_end type="bool">false</roll_to_end>
+                <until></until>
+                <scripts type="list">
+                    <!-- 获取当前页面的卷清单 -->
+                    <item>["xpath", "//ul[@id=\"ar_list_normal ar_rlos_bor\" and @class=\"ar_rlos_bor ar_list_col\"]/li"]</item>
+                    <!-- 要传入下一页的url地址 -->
+                    <item>["set_to_var", "vol_next_url", "eval", "''"]</item>
+                    <!-- 将卷信息数组存入 vols , 每个项为一个卷信息数组，顺序为卷名、url -->
+                    <item>["set_to_var", "vols", "sub_el_infos", "./a[1]", ".text", "@href"]</item>
+                </scripts>
+                <sub_scripts>
+                </sub_scripts>
+            </vol>
+            <file>
+                <!-- 资源卷下面的文件信息获取配置 -->
+                <is_html_code type="bool">false</is_html_code>
+                <headers></headers>
+                <roll_to_end type="bool">false</roll_to_end>
+                <until>//img[@id="dracga" and @style]</until>
+                <scripts type="list">
+                    <!-- 获取文件资源的js信息 -->
+                    <item>["xpath", "//div[@id=\"main\"]/script"]</item>
+                    <item>["set_to_var", "js_script", "el_info", "@innerHTML"]</item>
+                    <!-- 获取当前图片文件信息，获取文件名长度和扩展名 -->
+                    <item>["exec", "els = None"]</item>
+                    <item>["xpath", "//img[@id=\"dracga\"]"]</item>
+                    <item>["set_to_var", "current_img", "el_info", "@src"]</item>
+                    <item>["set_to_var", "src", "eval", "os.path.split(vars['current_img'])[0]"]</item>
+                    <item>["set_to_var", "name", "eval", "os.path.split(vars['current_img'])[1]"]</item>
+                    <item>["set_to_var", "dotindex", "eval", "vars['name'].index('.')"]</item>
+                    <item>["set_to_var", "name_ext", "eval", "vars['name'][vars['dotindex']:]"]</item>
+                    <item>["set_to_var", "name", "eval", "vars['name'][0:vars['dotindex']]"]</item>
+                    <item>["set_to_var", "name_len", "eval", "len(vars['name'])"]</item>
+                    <!-- 通过正则表达式解析js内容 -->
+                    <item>["exec", "import re"]</item>
+                    <item>["set_to_var", "file_list", "eval", "re.findall('(?!\\|)[0-9]{%d,}(?=\\|)' % vars['name_len'], vars['js_script'], re.M)"]</item>
+                    <!-- 通过子脚本逐个文件处理 -->
+                    <item>["set_to_var", "files", "eval", "list()"]</item>
+                    <item>["each", "get_down_file", "var", "file_list"]</item>
+                </scripts>
+                <sub_scripts>
+                    <get_down_file type="list">
+                        <item>["set_to_var", "_name", "eval", "vars['{$current_each_item$}'] + vars['name_ext']"]</item>
+                        <!--
+                        <item>["exec", "vars['files'].append([vars['_name'], '%s/%s' % (vars['src'], vars['_name']), 'http', None])"]</item>
+                        -->
+                        <item>["exec", "from HiveNetLib.base_tools.string_tool import StringTool"]</item>
+                        <item>["exec", "vars['files'].append([StringTool.fill_fix_string(vars['{$current_each_index$}'], 6, '0') + vars['name_ext'], '%s/%s' % (vars['src'], vars['_name']), 'http', None])"]</item>
+                    </get_down_file>
+                </sub_scripts>
+            </file>
+        </configs>
+    </www.177mh.net>
+</driver_config>

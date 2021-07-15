@@ -12,33 +12,23 @@ comics-down工具命令模块
 @file comics_down_cmd.py
 """
 
+import json
 import os
+import subprocess
 import sys
 import traceback
-import time
-import copy
-import inspect
 from urllib.parse import urlparse
-try:
-    import chardet
-except:
-    pass
 from HiveNetLib.base_tools.run_tool import RunTool
-from HiveNetLib.base_tools.import_tool import ImportTool
-from HiveNetLib.base_tools.exception_tool import ExceptionTool
 from HiveNetLib.base_tools.file_tool import FileTool
 from HiveNetLib.simple_i18n import _
 from HiveNetLib.simple_console.base_cmd import CmdBaseFW
 from HiveNetLib.generic import CResult
 from HiveNetLib.simple_xml import SimpleXml
-from HiveNetLib.simple_queue import MemoryQueue
-from HiveNetLib.simple_parallel import ParallelPool, ThreadParallel, ThreadParallelLock, ThreadParallelShareDict
 # 根据当前文件路径将包路径纳入，在非安装的情况下可以引用到
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), os.path.pardir, os.path.pardir)))
-from comics_down.lib.down_tool import DownTool
-from comics_down.lib.driver_fw import BaseDriverFW
-from comics_down.lib.down_driver_fw import BaseDownDriverFW
+from comics_down.lib.core import DriverManager, JobManager, Tools
+from comics_down.lib.auto_analyse import AnalyzeTool
 
 
 __MOUDLE__ = 'mediawiki_cmd'  # 模块名
@@ -53,100 +43,6 @@ class ComicsDownCmd(CmdBaseFW):
     comics-down的处理命令
     """
     #############################
-    # 工具类函数
-    #############################
-    @classmethod
-    def import_drivers(cls, path: str):
-        """
-        加载网站下载驱动
-
-        @param {str} path - 要加载驱动的路径
-
-        @return {bool} - 加载结果
-        """
-        _path = os.path.realpath(path)
-        if not os.path.exists(_path):
-            print(_("Import drivers error, path '$1' not exists!", _path))
-            return False
-
-        # 全局变量中存储加载字典
-        _driver_dict = RunTool.get_global_var('DRIVER_DICT')
-        if _driver_dict is None:
-            _driver_dict = {
-                'site_route': dict(),  # 网站域名对应到类ID的的路由字典
-                'class': dict(),  # 类ID与类对象的对应字典，类ID由实现类提供
-                'website': dict(),  # 支持的网页清单介绍
-            }
-            RunTool.set_global_var('DRIVER_DICT', _driver_dict)
-
-        # 遍历文件执行加载
-        _file_list = FileTool.get_filelist(path=_path, regex_str=r'.*\.py$', is_fullname=False)
-        for _file in _file_list:
-            if _file == '__init__.py':
-                continue
-
-            # 执行加载
-            _module = ImportTool.import_module(_file[0: -3], extend_path=_path, is_force=True)
-            _clsmembers = inspect.getmembers(_module, inspect.isclass)
-            for (_class_name, _class) in _clsmembers:
-                if not hasattr(_class, 'get_supports') or _class == BaseDriverFW:
-                    # 通过get_supports来判断是否驱动类
-                    continue
-
-                # 类对象加入到字典中
-                _class_id = _class.get_id()
-                _driver_dict['class'][_class_id] = _class
-
-                # 增加支持的网站路由
-                _support_list = _class.get_supports()
-                for _website in _support_list:
-                    _driver_dict['site_route'][_website.upper()] = _class_id  # 网站与类id对应
-                    _driver_dict['website'][_website] = _support_list[_website]  # 网站说明
-
-        # 完成处理
-        return True
-
-    @classmethod
-    def import_down_drivers(cls, path: str):
-        """
-        加载文件下载驱动
-
-        @param {str} path - 要加载驱动的路径
-
-        @return {bool} - 加载结果
-        """
-        _path = os.path.realpath(path)
-        if not os.path.exists(_path):
-            print(_("Import down drivers error, path '$1' not exists!", _path))
-            return False
-
-        # 全局变量中存储加载字典
-        _driver_dict = RunTool.get_global_var('DOWN_DRIVER_DICT')
-        if _driver_dict is None:
-            _driver_dict = dict()  # key为类型，value为类对象
-            RunTool.set_global_var('DOWN_DRIVER_DICT', _driver_dict)
-
-        # 遍历文件执行加载
-        _file_list = FileTool.get_filelist(path=_path, regex_str=r'.*\.py$', is_fullname=False)
-        for _file in _file_list:
-            if _file == '__init__.py':
-                continue
-
-            # 执行加载
-            _module = ImportTool.import_module(_file[0: -3], extend_path=_path, is_force=True)
-            _clsmembers = inspect.getmembers(_module, inspect.isclass)
-            for (_class_name, _class) in _clsmembers:
-                if not hasattr(_class, 'get_supports') or _class == BaseDownDriverFW:
-                    # 通过get_supports来判断是否驱动类
-                    continue
-
-                # 类对象加入到字典中
-                _driver_dict[_class.get_supports()] = _class
-
-        # 完成处理
-        return True
-
-    #############################
     # 构造函数，在里面增加函数映射字典
     #############################
 
@@ -159,11 +55,19 @@ class ComicsDownCmd(CmdBaseFW):
         @throws {exception-type} - 如果初始化异常应抛出异常
         """
         self._CMD_DEALFUN_DICT = {
-            'set_driver_path': self._set_driver_path_cmd_dealfun,
-            'support': self._support_cmd_dealfun,
+            'set_website_driver_path': self._set_website_driver_path_cmd_dealfun,
+            'set_down_driver_path': self._set_down_driver_path_cmd_dealfun,
             'set_default_save_path': self._set_default_save_path_cmd_dealfun,
+            'support': self._support_cmd_dealfun,
             'download': self._download_cmd_dealfun,
-            'set_down_driver_path': self._set_down_driver_path_cmd_dealfun
+            'get_down_index': self._get_down_index_cmd_dealfun,
+            'show_down_index': self._show_down_index_cmd_dealfun,
+            'start_proxy_server': self._start_proxy_server_cmd_dealfun,
+            'stop_proxy_server': self._stop_proxy_server_cmd_dealfun,
+            'analysis_video_urls': self._analysis_video_urls_cmd_dealfun,
+            'download_file': self._download_file_cmd_dealfun,
+            'download_webpage_video': self._download_webpage_video_cmd_dealfun,
+            'analysis_xpath': self._analysis_xpath_cmd_dealfun
         }
         self._console_global_para = RunTool.get_global_var('CONSOLE_GLOBAL_PARA')
 
@@ -172,49 +76,58 @@ class ComicsDownCmd(CmdBaseFW):
             self._console_global_para['config_file'],
             encoding=self._console_global_para['config_encoding']
         )
-        _driver_path = _config_xml.get_value('/console/driver_path')
-        if _driver_path != '':
-            _driver_path = os.path.realpath(
-                os.path.join(
-                    os.path.realpath(self._console_global_para['execute_file_path']),
-                    _config_xml.get_value('/console/driver_path')
-                )
-            )
-        self._console_global_para['driver_path'] = _driver_path
+        # 私有驱动目录
+        self._console_global_para['website_driver_path'] = _config_xml.get_value(
+            '/console/website_driver_path')
+        self._console_global_para['down_driver_path'] = _config_xml.get_value(
+            '/console/down_driver_path')
+        # 默认保存路径
         self._console_global_para['default_save_path'] = _config_xml.get_value(
             '/console/default_save_path')
+        # 默认shell编码
+        self._console_global_para['shell_encoding'] = _config_xml.get_value(
+            '/console/shell_encoding')
+        # python命令
+        self._console_global_para['python_cmd'] = _config_xml.get_value(
+            '/console/python_cmd')
 
-        # 装载默认网站驱动
-        self.import_drivers(
-            os.path.join(self._console_global_para['execute_file_path'], 'driver')
+        # 默认下载映射转换字典
+        self._console_global_para['downtype_mapping'] = _config_xml.get_value(
+            '/console/downtype_mapping')
+        self._console_global_para['common_wd_overwrite'] = (
+            _config_xml.get_value('/console/common_wd_overwrite') == 'true'
         )
 
-        # 装载自定义的网站驱动
-        if _driver_path != '':
-            self.import_drivers(_driver_path)
+    def _init_after_console_init(self):
+        """
+        实现类需要覆盖实现的simple_console初始化后要执行的函数
+        """
+        self._console_global_para = RunTool.get_global_var('CONSOLE_GLOBAL_PARA')
 
-        self.driver_dict = RunTool.get_global_var('DRIVER_DICT')
-
-        # 装载默认文件下载驱动
-        self.import_down_drivers(
-            os.path.join(self._console_global_para['execute_file_path'], 'down_driver')
+        # 设置命令行打印工具
+        RunTool.set_global_var(
+            'CONSOLE_PRINT_FUNCTION', self._console_global_para['prompt_obj'].prompt_print
         )
 
-        # 装载自定义的文件下载驱动
-        _down_driver_path = _config_xml.get_value('/console/down_driver_path')
-        if _down_driver_path != '':
-            _down_driver_path = os.path.realpath(
-                os.path.join(
-                    os.path.realpath(self._console_global_para['execute_file_path']),
-                    _down_driver_path
-                )
-            )
-            self.import_down_drivers(_down_driver_path)
+        # 装载驱动
+        _downtype_mapping = {}
+        if self._console_global_para['downtype_mapping'] != '':
+            _downtype_mapping = json.loads(self._console_global_para['downtype_mapping'])
 
-        self.down_driver_dict = RunTool.get_global_var('DOWN_DRIVER_DICT')
+        DriverManager.init_drivers(
+            self._console_global_para['execute_file_path'],
+            private_website_driver=self._console_global_para['website_driver_path'],
+            private_down_driver=self._console_global_para['down_driver_path'],
+            default_downtype_mapping=_downtype_mapping,
+            common_wd_overwrite=self._console_global_para['common_wd_overwrite']
+        )
 
-        # 下载需要的公共变量
-        self.job_queue = MemoryQueue()
+        # 初始化任务管理器
+        self._console_global_para['job_manager'] = JobManager(
+            self._console_global_para['execute_file_path'],
+            python_cmd=self._console_global_para['python_cmd'],
+            shell_encoding=self._console_global_para['shell_encoding']
+        )
 
     #############################
     # 实际处理函数
@@ -255,7 +168,7 @@ class ComicsDownCmd(CmdBaseFW):
     #############################
     # 实际处理函数
     #############################
-    def _set_driver_path_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+    def _set_website_driver_path_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
         """
         设置网站下载驱动的搜索路径
 
@@ -275,29 +188,37 @@ class ComicsDownCmd(CmdBaseFW):
             prompt_obj.prompt_print(_('path must be not null'))
             return _result
 
-        self._console_global_para['driver_path'] = os.path.realpath(_path)
-        if not os.path.exists(self._console_global_para['driver_path']):
+        _real_path = os.path.join(
+            self._console_global_para['execute_file_path'], _path
+        )
+
+        if not os.path.exists(_real_path):
             prompt_obj.prompt_print(
-                _("Path '$1' not exists!", self._console_global_para['driver_path'])
+                _("Path '$1' not exists!", _real_path)
             )
             return _result
 
-        # 修改配置文件中的驱动搜索路径
+        # 加载网站驱动
+        if not DriverManager.import_website_drivers(_real_path):
+            # 加载失败
+            return _result
+
+        # 设置私有驱动参数
+        self._console_global_para['website_driver_path'] = _path
+
         _config_xml = SimpleXml(
             self._console_global_para['config_file'],
             encoding=self._console_global_para['config_encoding']
         )
         _config_xml.set_value(
-            '/console/driver_path',
+            '/console/website_driver_path',
             _path
         )
         _config_xml.save()
 
-        # 加载支持的网站
-        self.import_drivers(self._console_global_para['driver_path'])
-
-        prompt_obj.prompt_print(_("Driver path set to '$1'",
-                                  self._console_global_para['driver_path']))
+        prompt_obj.prompt_print(
+            _("Driver path set to '$1'", self._console_global_para['website_driver_path'])
+        )
 
         # 结束
         return _result
@@ -322,14 +243,20 @@ class ComicsDownCmd(CmdBaseFW):
             prompt_obj.prompt_print(_('path must be not null'))
             return _result
 
-        self._console_global_para['down_driver_path'] = os.path.realpath(_path)
-        if not os.path.exists(self._console_global_para['down_driver_path']):
-            prompt_obj.prompt_print(
-                _("Path '$1' not exists!", self._console_global_para['down_driver_path'])
-            )
+        _real_path = os.path.join(
+            self._console_global_para['execute_file_path'], _path
+        )
+
+        if not os.path.exists(_real_path):
+            prompt_obj.prompt_print(_("Path '$1' not exists!", _real_path))
             return _result
 
-        # 修改配置文件中的驱动搜索路径
+        # 加载下载驱动
+        DriverManager.import_down_drivers(_real_path)
+
+        # 设置私有驱动参数
+        self._console_global_para['down_driver_path'] = _path
+
         _config_xml = SimpleXml(
             self._console_global_para['config_file'],
             encoding=self._console_global_para['config_encoding']
@@ -340,11 +267,9 @@ class ComicsDownCmd(CmdBaseFW):
         )
         _config_xml.save()
 
-        # 加载支持的下载驱动
-        self.import_down_drivers(self._console_global_para['down_driver_path'])
-
-        prompt_obj.prompt_print(_("Down driver path set to '$1'",
-                                  self._console_global_para['down_driver_path']))
+        prompt_obj.prompt_print(
+            _("Down driver path set to '$1'", self._console_global_para['down_driver_path'])
+        )
 
         # 结束
         return _result
@@ -385,8 +310,10 @@ class ComicsDownCmd(CmdBaseFW):
         )
         _config_xml.save()
 
-        prompt_obj.prompt_print(_("Default save path set to '$1'",
-                                  self._console_global_para['default_save_path']))
+        prompt_obj.prompt_print(
+            _("Default save path set to '$1'",
+              self._console_global_para['default_save_path'])
+        )
 
         # 结束
         return _result
@@ -405,9 +332,9 @@ class ComicsDownCmd(CmdBaseFW):
             print_str属性要求框架进行打印处理
         """
         prompt_obj.prompt_print(_('support website list') + ":\n")
-        _driver_dict = RunTool.get_global_var('DRIVER_DICT')
-        for _website in _driver_dict['website'].keys():
-            prompt_obj.prompt_print('%s : %s\n' % (_website, _driver_dict['website'][_website]))
+        _websites = DriverManager.get_supported_website()
+        for _host, _note in _websites.items():
+            prompt_obj.prompt_print('%s : %s\n' % (_host, _note))
 
         return CResult(code='00000')
 
@@ -420,6 +347,7 @@ class ComicsDownCmd(CmdBaseFW):
         @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
         @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
         @param {kwargs} - 传入的主进程的初始化kwargs对象
+            shell_cmd {bool} - 如果传入参数有该key，且值为True，代表是命令行直接执行，非进入控制台执行
 
         @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
             print_str属性要求框架进行打印处理
@@ -433,249 +361,474 @@ class ComicsDownCmd(CmdBaseFW):
             _default_save_path = self._console_global_para['work_path']
 
         _para_dict.setdefault('path', _default_save_path)
+        _para_dict['path'] = os.path.realpath(_para_dict['path'])
 
-        # 通过参数启动任务
-        return self._start_download(para_dict=_para_dict, prompt_obj=prompt_obj, **kwargs)
-
-    #############################
-    # 内部函数
-    #############################
-    def _start_download(self, para_dict: dict, prompt_obj=None, **kwargs):
-        """
-        启动下载任务
-
-        @param {dict} para_dict - 参数字典
-        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
-
-        @returns {CResult} - 下载结果
-        """
-        _result = CResult(code='00000')
-        _job_result = dict()
-        RunTool.set_global_var('JOB_RESULT', _job_result)
-
-        with ExceptionTool.ignored_cresult(
-            result_obj=_result, self_log_msg=_('Download get exception'), debug=True
-        ):
-            if 'job_file' in para_dict.keys():
-                # 从文件中获取url列表执行下载, 通过并行方式下载
-                _bytes = None
-                with open(para_dict['job_file'], 'rb') as _file:
-                    _bytes = _file.read()
-
-                # 判断字符集
-                _file_encoding = 'utf-8'
-                try:
-                    _file_encoding = chardet.detect(_bytes)['encoding']
-                    if _file_encoding.startswith('ISO-8859'):
-                        _file_encoding = 'gbk'
-                except:
-                    pass
-
-                # 放入队列中
-                self.job_queue.clear()
-                _job_list = str(_bytes, encoding=_file_encoding).replace('\r', '\n').split('\n')
-                for _job in _job_list:
-                    _job = _job.strip()
-                    if _job != '':
-                        self.job_queue.put([_job, para_dict, prompt_obj, kwargs])
-
-                # 启动线程池执行下载处理
-                _pool = ParallelPool(
-                    deal_fun=self._down_job_worker_fun,
-                    parallel_class=ThreadParallel,
-                    run_args=(self.job_queue, ),
-                    task_queue=self.job_queue,
-                    maxsize=int(para_dict.get('job_worker', '1')),
-                    sharedict_class=ThreadParallelShareDict,
-                    parallel_lock_class=ThreadParallelLock,
-                    auto_stop=True
-                )
-                # 启动线程池
-                _pool.start()
-
-                # 等待任务结束
-                while not _pool.is_stop:
-                    time.sleep(1)
-            else:
-                # 单url下载
-                self._download_job_start(para_dict, prompt_obj=prompt_obj, **kwargs)
-
-        # 显示执行结果
-        prompt_obj.prompt_print('%s : \n' % _('Download finished'))
-        for _name in _job_result.keys():
-            _info = _job_result[_name]
-            prompt_obj.prompt_print(
-                'Task [%s] %s: files[%d] success[%d] task[%d] task_fail[%d] msg[%s]' % (
-                    _name, _info['status'], _info['files'],
-                    _info['success'], _info['task'], _info['task_fail'], _info['msg']
-                )
-            )
-
-        return _result
-
-    def _download_job_start(self, para_dict: dict, prompt_obj=None, **kwargs):
-        """
-        执行下载任务
-
-        @param {dict} para_dict - 下载参数字典
-        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
-        """
-        _result = CResult(code='00000')
-        _down_info = {
-            'status': 'downloading',
-            'msg': '',
-            'files': 0,
-            'success': 0,
-            'task': 0,
-            'task_fail': 0
-        }
-
-        # 处理默认的配置信息
-        _para_dict = {
-            'url': '',
-            'name': '',
-            'path': '',
-            'job_worker': '1',
-            'auto_redo': 'n',
-            'encoding': 'utf-8',
-            'force_update': 'n',
-            'job_down_worker': '10',
-            'down_overtime': '300',
-            'use_break_down': 'y',
-            'overtime': '30',
-            'connect_retry': '3',
-            'verify': 'y',
-            'remove_wget_tmp': 'y',
-            'webdriver': 'Chrome',
-            'wd_wait_all_loaded': 'n',
-            'wd_overtime': '30',
-            'wd_headless': 'n',
-            'wd_min': 'n',
-            'search_mode': 'n',
-            'show_rate': 'n'
-        }
-        _para_dict.update(para_dict)
-
-        with ExceptionTool.ignored_cresult(
-            result_obj=_result, self_log_msg=_('Download job exception'), debug=True
-        ):
-            _driver = None
-            _url_info = None
-
-            # 获取任务名
-            if _para_dict['name'] == '':
-                if _para_dict['url'] == '':
-                    _down_info['msg'] = _('url or name must at least set one!')
-                    raise AssertionError(_down_info['msg'])
-
-                _url_info = urlparse(_para_dict['url'])
-                _site = _url_info.netloc.upper()
-                if _site not in self.driver_dict['site_route'].keys():
-                    _down_info['msg'] = _('not driver for the website [$1]', _site)
-                    raise RuntimeError(_down_info['msg'])
-
-                _driver = self.driver_dict['class'][self.driver_dict['site_route'][_site]]
-                _para_dict['name'] = _driver.get_name_by_url(**_para_dict)
-
-            # 确保漫画名能作为目录保存
-            _para_dict['name'] = DownTool.path_char_replace(_para_dict['name'])
-
-            # 加入到结果清单
-            RunTool.get_global_var('JOB_RESULT')[_para_dict['name']] = _down_info
-
-            # 获取配置文件
-            _xml_doc = DownTool.get_down_task_conf(
-                _para_dict['path'], _para_dict['name'], _para_dict['url']
-            )
-            # 更新一些信息到内存
-            if _para_dict['url'] == '':
-                _para_dict['url'] = _xml_doc.get_value('/down_task/info/url')
-            _down_info['files'] = int(_xml_doc.get_value('/down_task/info/files'))
-            _down_info['success'] = int(_xml_doc.get_value('/down_task/info/success'))
-            _vol_info_ok = _xml_doc.get_value('/down_task/info/vol_info_ok')
-            _file_info_ok = _xml_doc.get_value('/down_task/info/file_info_ok')
-
-            # 判断驱动是否为空，如果为空有可能是因为传了name进来
-            if _driver is None:
-                _url_info = urlparse(_para_dict['url'])
-                _site = _url_info.netloc.upper()
-                if _site not in self.driver_dict['site_route'].keys():
-                    _down_info['msg'] = _('not driver for the website [$1]', _site)
-                    raise RuntimeError(_down_info['msg'])
-
-                _driver = self.driver_dict['class'][self.driver_dict['site_route'][_site]]
-
-            # 解析网页获取卷信息 - 在驱动框架已处理了自动重试
-            if _para_dict['force_update'] == 'y' or _para_dict['search_mode'] == 'y' or _vol_info_ok != 'y':
-                if not _driver.update_vol_info(_xml_doc, **_para_dict):
-                    _down_info['msg'] = _('Update vol info error')
-                    raise RuntimeError(_down_info['msg'])
-
-            # 解析网页获取每个卷的文件
-            if _para_dict['force_update'] == 'y' or _para_dict['search_mode'] == 'y' or _file_info_ok != 'y':
-                if not _driver.update_file_info(_xml_doc, **_para_dict):
-                    _down_info['msg'] = _('Update files info error')
-                    raise RuntimeError(_down_info['msg'])
-
-            # 循环处理下载任务, 在有失败的情况重新执行
-            while True:
-                try:
-                    # 重置信息
-                    _down_info['task'] = 0
-                    _down_info['task_fail'] = 0
-                    _down_info['msg'] = ''
-
-                    # 执行下载
-                    _downtool = DownTool(_xml_doc, **_para_dict)
-                    _downtool.start_down_file()
-
-                    # 正常执行完成，检查是否已完成
-                    if _para_dict['auto_redo'] == 'y' and _down_info['task_fail'] > 0:
-                        time.sleep(0.01)
-                        continue
-
-                    # 退出处理
-                    break
-                except:
-                    print('%s[%s]:\n%s' % (
-                        _('start downlong file error'), _para_dict['name'],
-                        traceback.format_exc()
-                    ))
-                    if _para_dict['auto_redo'] == 'y':
-                        time.sleep(0.01)
-                        continue
-                    else:
-                        _down_info['msg'] = _('start downlong file error')
-                        raise RuntimeError(_down_info['msg'])
-
-        # 处理返回
-        if not _result.is_success():
-            _down_info['status'] = 'error'
-            if _down_info['msg'] == '':
-                _down_info['msg'] = _result.msg
-
-            if _para_dict['name'] == '':
-                if _para_dict['url'] == '':
-                    RunTool.get_global_var('JOB_RESULT')['null'] = _down_info
-                else:
-                    RunTool.get_global_var('JOB_RESULT')[_para_dict['url']] = _down_info
-
-    def _down_job_worker_fun(self, q, ):
-        """
-        下载任务工作函数
-        """
+        # 根据参数启动下载任务
+        _job_manager: JobManager = self._console_global_para['job_manager']
         try:
-            _job = q.get(block=False)
-            _para_dict = copy.deepcopy(_job[1])
-            _job_infos = _job[0].split('|')
-            _para_dict['url'] = _job_infos[0]
-            if len(_job_infos) > 1:
-                _para_dict['name'] = _job_infos[1]
-            self._download_job_start(_para_dict, prompt_obj=_job[2], **_job[3])
+            _sub_process = (_para_dict.get('sub_process', 'n') == 'y')
+            _asyn = True
+            if kwargs.get('shell_cmd', False):
+                # 命令行进入的方式，要同步完成
+                _asyn = False
+
+            _ret = _job_manager.start_job(
+                'download', _para_dict, sub_process=_sub_process, asyn=_asyn
+            )
+            if type(_ret) == dict:
+                prompt_obj.prompt_print('%s : \n' % _('Download finished'))
+                prompt_obj.prompt_print(
+                    'Task [%s] %s: files[%d] success[%d] task[%d] task_fail[%d] msg[%s]' % (
+                        _ret['name'], _ret['status'], _ret['files'],
+                        _ret['success'], _ret['task'], _ret['task_fail'], _ret['msg']
+                    )
+                )
+                if _ret['status'] != 'done':
+                    return CResult(code='29999')
         except:
-            # 没有取到任务
-            time.sleep(1)
-            return None
+            _result = CResult(code='29999', msg=traceback.format_exc())
+            _result.print_str = _result.msg
+            return _result
+
+        return CResult(code="00000")
+
+    def _get_down_index_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+        """
+        获取资源下载索引文件
+
+        @param {string} message='' - prompt提示信息
+        @param {string} cmd - 执行的命令key值
+        @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
+        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
+        @param {kwargs} - 传入的主进程的初始化kwargs对象
+            shell_cmd {bool} - 如果传入参数有该key，且值为True，代表是命令行直接执行，非进入控制台执行
+
+        @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
+            print_str属性要求框架进行打印处理
+        """
+        # 获取字典参数
+        _para_dict = self._cmd_para_to_dict(cmd_para, name_with_sign=False)
+
+        # 默认保存目录
+        _default_save_path = self._console_global_para['default_save_path']
+        if _default_save_path == '':
+            _default_save_path = self._console_global_para['work_path']
+
+        _para_dict.setdefault('path', _default_save_path)
+        _para_dict['path'] = os.path.realpath(_para_dict['path'])
+
+        # 根据参数启动下载任务
+        _job_manager: JobManager = self._console_global_para['job_manager']
+        try:
+            _sub_process = (_para_dict.get('sub_process', 'n') == 'y')
+            _asyn = True
+            if kwargs.get('shell_cmd', False):
+                # 命令行进入的方式，要同步完成
+                _asyn = False
+
+            _ret = _job_manager.start_job(
+                'index', _para_dict, sub_process=_sub_process, asyn=_asyn
+            )
+            if type(_ret) == dict:
+                prompt_obj.prompt_print('%s : \n' % _('Get download index finished'))
+                prompt_obj.prompt_print(
+                    'Task [%s] %s: files[%d] success[%d] task[%d] task_fail[%d] msg[%s]' % (
+                        _ret['name'], _ret['status'], _ret['files'],
+                        _ret['success'], _ret['task'], _ret['task_fail'], _ret['msg']
+                    )
+                )
+        except:
+            _result = CResult(code='29999', msg=traceback.format_exc())
+            _result.print_str = _result.msg
+            return _result
+
+        return CResult(code="00000")
+
+    def _show_down_index_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+        """
+        获取资源下载索引文件
+
+        @param {string} message='' - prompt提示信息
+        @param {string} cmd - 执行的命令key值
+        @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
+        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
+        @param {kwargs} - 传入的主进程的初始化kwargs对象
+            shell_cmd {bool} - 如果传入参数有该key，且值为True，代表是命令行直接执行，非进入控制台执行
+
+        @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
+            print_str属性要求框架进行打印处理
+        """
+        # 获取字典参数
+        _para_dict = self._cmd_para_to_dict(cmd_para, name_with_sign=False)
+
+        # 默认保存目录
+        _default_save_path = self._console_global_para['default_save_path']
+        if _default_save_path == '':
+            _default_save_path = self._console_global_para['work_path']
+
+        _para_dict.setdefault('path', _default_save_path)
+        _para_dict['path'] = os.path.realpath(_para_dict['path'])
+
+        # 根据参数启动下载任务
+        _job_manager: JobManager = self._console_global_para['job_manager']
+        try:
+            _infos = _job_manager.get_down_index_info(_para_dict['name'], _para_dict['path'])
+            _type = _para_dict.get('type', 'info')
+            if _type == 'vols':
+                # 显示卷信息
+                for _vol_num, _vol_info in _infos['down_list'].items():
+                    prompt_obj.prompt_print(
+                        'vol_num[%s] name[%s] status[%s] files[%s] url[%s]' % (
+                            _vol_num, _vol_info['name'], _vol_info['status'],
+                            _vol_info['file_num'], _vol_info['url']
+                        )
+                    )
+            elif _type == 'files':
+                # 显示文件清单
+                _vol_num = _para_dict.get('vol_num', '')
+                if _vol_num == '':
+                    _vols = list(_infos['down_list'].keys())
+                else:
+                    _vols = [_vol_num]
+
+                # 遍历卷展示
+                for _vol_num in _vols:
+                    _vol_info = _infos['down_list'][_vol_num]
+                    prompt_obj.prompt_print(
+                        'vol_num[%s] name[%s] status[%s] files[%s] url[%s]' % (
+                            _vol_num, _vol_info['name'], _vol_info['status'],
+                            _vol_info['file_num'], _vol_info['url']
+                        )
+                    )
+                    for _file_num in _vol_info['files'].keys():
+                        _file_info = _vol_info['files'][_file_num]
+                        prompt_obj.prompt_print(
+                            'name[%s] status[%s] downtype[%s] url[%s]' % (
+                                _file_info['name'], _file_info['status'], _file_info['downtype'],
+                                _file_info['url']
+                            )
+                        )
+
+                    prompt_obj.prompt_print('')  # 换行
+            else:
+                # 显示基础信息
+                prompt_obj.prompt_print(
+                    'name:[%s] status[%s] files[%s] success[%s] url[%s]' % (
+                        _infos['info']['name'], _infos['info']['status'], _infos['info']['files'],
+                        _infos['info']['success'], _infos['info']['url']
+                    )
+                )
+        except:
+            _result = CResult(code='29999', msg=traceback.format_exc())
+            _result.print_str = _result.msg
+            return _result
+
+        return CResult(code="00000")
+
+    def _start_proxy_server_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+        """
+        启动代理服务
+
+        @param {string} message='' - prompt提示信息
+        @param {string} cmd - 执行的命令key值
+        @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
+        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
+        @param {kwargs} - 传入的主进程的初始化kwargs对象
+            shell_cmd {bool} - 如果传入参数有该key，且值为True，代表是命令行直接执行，非进入控制台执行
+
+        @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
+            print_str属性要求框架进行打印处理
+        """
+        # 获取字典参数
+        _para_dict = self._cmd_para_to_dict(cmd_para, name_with_sign=False)
+        _base_path = self._console_global_para['execute_file_path']
+        try:
+            _proxy_dict = RunTool.get_global_var('RUNNING_PROXY_DICT')
+            if _proxy_dict is None:
+                _proxy_dict = dict()
+                RunTool.set_global_var('RUNNING_PROXY_DICT', _proxy_dict)
+
+            # 判断是否已启动
+            if _para_dict['proxy'] in _proxy_dict.keys():
+                prompt_obj.prompt_print('proxy [%s] already running!' % _para_dict['proxy'])
+                return CResult(code="00000")
+
+            # 启动命令
+            _cmd = 'mitmdump -s %s -p %s' % (
+                os.path.join(_base_path, _para_dict['proxy']),
+                _para_dict.get('port', '9000')
+            )
+
+            # 运行
+            if sys.platform == 'win32':
+                # windows，创建新窗口执行
+                _sp = subprocess.Popen(
+                    _cmd, close_fds=True, shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
+            else:
+                _sp = subprocess.Popen(_cmd, close_fds=True, shell=True)
+
+            _proxy_dict[_para_dict['proxy']] = _sp
+            prompt_obj.prompt_print('start proxy server success')
+        except:
+            _result = CResult(code='29999', msg=traceback.format_exc())
+            _result.print_str = _result.msg
+            return _result
+
+        return CResult(code="00000")
+
+    def _stop_proxy_server_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+        """
+        停止代理服务
+
+        @param {string} message='' - prompt提示信息
+        @param {string} cmd - 执行的命令key值
+        @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
+        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
+        @param {kwargs} - 传入的主进程的初始化kwargs对象
+            shell_cmd {bool} - 如果传入参数有该key，且值为True，代表是命令行直接执行，非进入控制台执行
+
+        @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
+            print_str属性要求框架进行打印处理
+        """
+        # 获取字典参数
+        _para_dict = self._cmd_para_to_dict(cmd_para, name_with_sign=False)
+        try:
+            _proxy_dict = RunTool.get_global_var('RUNNING_PROXY_DICT')
+            if _proxy_dict is None:
+                _proxy_dict = dict()
+                RunTool.set_global_var('RUNNING_PROXY_DICT', _proxy_dict)
+
+            # 判断是否已启动
+            if _para_dict['proxy'] not in _proxy_dict.keys():
+                prompt_obj.prompt_print('proxy [%s] not running!' % _para_dict['proxy'])
+                return CResult(code="00000")
+
+            _proxy_dict[_para_dict['proxy']].kill()
+            _proxy_dict.pop(_para_dict['proxy'], None)
+            prompt_obj.prompt_print('stop proxy server success')
+        except:
+            _result = CResult(code='29999', msg=traceback.format_exc())
+            _result.print_str = _result.msg
+            return _result
+
+        return CResult(code="00000")
+
+    def _analysis_video_urls_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+        """
+        解析指定页面的视频地址
+
+        @param {string} message='' - prompt提示信息
+        @param {string} cmd - 执行的命令key值
+        @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
+        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
+        @param {kwargs} - 传入的主进程的初始化kwargs对象
+            shell_cmd {bool} - 如果传入参数有该key，且值为True，代表是命令行直接执行，非进入控制台执行
+
+        @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
+            print_str属性要求框架进行打印处理
+        """
+        # 获取字典参数
+        _para_dict = self._cmd_para_to_dict(cmd_para, name_with_sign=False)
+
+        _url = _para_dict.pop('url', '')
+        if _url == '':
+            prompt_obj.prompt_print(_('url must be not null'))
+            return CResult(code="29999")
+
+        _extends = _para_dict.pop('extends', ['m3u8', 'mp4'])
+
+        try:
+            _urls = AnalyzeTool.get_media_url(
+                _url, type_list=_extends, back_all=True, **_para_dict
+            )
+            prompt_obj.prompt_print('\n'.join(_urls))
+        except:
+            _result = CResult(code='29999', msg=traceback.format_exc())
+            _result.print_str = _result.msg
+            return _result
+
+        return CResult(code="00000")
+
+    def _download_file_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+        """
+        解析指定页面的视频地址
+
+        @param {string} message='' - prompt提示信息
+        @param {string} cmd - 执行的命令key值
+        @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
+        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
+        @param {kwargs} - 传入的主进程的初始化kwargs对象
+            shell_cmd {bool} - 如果传入参数有该key，且值为True，代表是命令行直接执行，非进入控制台执行
+
+        @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
+            print_str属性要求框架进行打印处理
+        """
+        # 获取字典参数
+        _para_dict = self._cmd_para_to_dict(cmd_para, name_with_sign=False)
+
+        _url = _para_dict.get('url', '')
+        if _url == '':
+            prompt_obj.prompt_print(_('url must be not null'))
+            return CResult(code="29999")
+
+        _save_file = _para_dict.pop('save_file', '')
+        if _save_file == '':
+            prompt_obj.prompt_print(_('save_file must be not null'))
+            return CResult(code="29999")
+
+        _save_file = os.path.join(
+            self._console_global_para['work_path'], _save_file
+        )
+
+        _extend_json = _para_dict.pop('extend_json', None)
+        if _extend_json is not None:
+            _extend_json = json.loads(_extend_json)
+
+        try:
+            _down_driver = DriverManager.get_down_driver(
+                _para_dict.pop('downtype', 'http'),
+                json.loads(_para_dict.get('downtype_mapping', '{}'))
+            )
+            _down_driver.download(_url, _save_file, extend_json=_extend_json, **_para_dict)
+            prompt_obj.prompt_print(_('Download finished'))
+        except:
+            _result = CResult(code='29999', msg=traceback.format_exc())
+            _result.print_str = _result.msg
+            return _result
+
+        return CResult(code="00000")
+
+    def _download_webpage_video_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+        """
+        解析指定页面并下载视频文件
+
+        @param {string} message='' - prompt提示信息
+        @param {string} cmd - 执行的命令key值
+        @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
+        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
+        @param {kwargs} - 传入的主进程的初始化kwargs对象
+            shell_cmd {bool} - 如果传入参数有该key，且值为True，代表是命令行直接执行，非进入控制台执行
+
+        @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
+            print_str属性要求框架进行打印处理
+        """
+        # 获取字典参数
+        _para_dict = self._cmd_para_to_dict(cmd_para, name_with_sign=False)
+
+        _url = _para_dict.pop('url', '')
+        if _url == '':
+            prompt_obj.prompt_print(_('url must be not null'))
+            return CResult(code="29999")
+
+        _extends = _para_dict.pop('extends', ['m3u8', 'mp4'])
+        _filename = _para_dict.pop('filename', '')
+        _downtype = _para_dict.pop('downtype', 'http')
+        _extend_json = _para_dict.pop('extend_json', None)
+        if _extend_json is not None:
+            _extend_json = json.loads(_extend_json)
+
+        # 默认保存目录
+        _default_save_path = self._console_global_para['default_save_path']
+        if _default_save_path == '':
+            _default_save_path = self._console_global_para['work_path']
+
+        _para_dict.setdefault('path', _default_save_path)
+        _para_dict['path'] = os.path.realpath(_para_dict['path'])
+
+        try:
+            # 判断是否直接为文件下载url
+            _ext = FileTool.get_file_ext(urlparse(_url).path).lower()
+            if _ext not in _extends:
+                # 需要解析页面获下载url
+                _url = AnalyzeTool.get_media_url(
+                    _url, type_list=_extends, **_para_dict
+                )
+                if _url is None:
+                    prompt_obj.prompt_print(_('no video file found in web page'))
+                    return CResult(code="29999")
+
+                _ext = FileTool.get_file_ext(urlparse(_url).path).lower()  # 更新扩展名
+
+            # 处理下载文件名
+            if _filename == '':
+                _filename = os.path.split(urlparse(_url).path)[1]
+                if _ext == 'm3u8':
+                    _filename = _filename[0:-4] + 'mp4'
+
+            # 处理文件下载
+            if _ext == 'm3u8':
+                _downtype = 'm3u8'
+
+            _down_driver = DriverManager.get_down_driver(
+                _downtype, json.loads(_para_dict.get('downtype_mapping', '{}'))
+            )
+            prompt_obj.prompt_print(_('download file: $1', _url))
+            _down_driver.download(
+                _url, os.path.join(_para_dict['path'], _filename),
+                extend_json=_extend_json, **_para_dict
+            )
+            prompt_obj.prompt_print(_('Download finished'))
+
+        except:
+            _result = CResult(code='29999', msg=traceback.format_exc())
+            _result.print_str = _result.msg
+            return _result
+
+        return CResult(code="00000")
+
+    def _analysis_xpath_cmd_dealfun(self, message='', cmd='', cmd_para='', prompt_obj=None, **kwargs):
+        """
+        解析指定元素的xpath
+
+        @param {string} message='' - prompt提示信息
+        @param {string} cmd - 执行的命令key值
+        @param {string} cmd_para - 传入的命令参数（命令后的字符串，去掉第一个空格）
+        @param {PromptPlus} prompt_obj=None - 传入调用函数的PromptPlus对象，可以通过该对象的一些方法控制输出显示
+        @param {kwargs} - 传入的主进程的初始化kwargs对象
+            shell_cmd {bool} - 如果传入参数有该key，且值为True，代表是命令行直接执行，非进入控制台执行
+
+        @returns {CResult} - 命令执行结果，可通过返回错误码10101通知框架退出命令行, 同时也可以通过CResult对象的
+            print_str属性要求框架进行打印处理
+        """
+        # 获取字典参数
+        _para_dict = self._cmd_para_to_dict(cmd_para, name_with_sign=False)
+
+        _url = _para_dict.pop('url', '')
+        if _url == '':
+            prompt_obj.prompt_print(_('url must be not null'))
+            return CResult(code="29999")
+
+        _content = _para_dict.pop('content', '')
+        if _content == '':
+            prompt_obj.prompt_print(_('content must be not null'))
+            return CResult(code="29999")
+
+        _use_html_code = _para_dict.pop('use_html_code', 'y')
+        _attr_name = _para_dict.pop('attr_name', '')
+        _is_tail = _para_dict.pop('is_tail', 'n')
+        _selector_up_level = _para_dict.pop('selector_up_level', '3')
+        _split_class = _para_dict.pop('split_class', 'n')
+
+        _para_dict = Tools.get_correct_para_dict(_para_dict)
+
+        try:
+            _configs = AnalyzeTool.get_contents_config(
+                [_url], check_contents={'name': [_content]}, attr_name=({} if _attr_name == '' else {'name': [_attr_name]}),
+                is_tail=(_is_tail == 'y'), use_html_code=(_use_html_code == 'y'),
+                search_dict={
+                    'selector_up_level': _selector_up_level,
+                    'split_class': (_split_class == 'y')
+                },
+                **_para_dict
+            )
+            prompt_obj.prompt_print(_configs['name'])
+        except:
+            _result = CResult(code='29999', msg=traceback.format_exc())
+            _result.print_str = _result.msg
+            return _result
+
+        return CResult(code="00000")
 
 
 if __name__ == '__main__':

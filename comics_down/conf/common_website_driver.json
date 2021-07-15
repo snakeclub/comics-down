@@ -1,0 +1,420 @@
+{
+  "mapping": {
+    "WWW.177MH.NET": [
+      "ef3e2fc4-e579-11eb-8816-1e008a0a9295",
+      "y"
+    ],
+    "WWW.77MH.CO": [
+      "ef3e2fc4-e579-11eb-8816-1e008a0a9295",
+      "n"
+    ],
+    "WWW.77MH.COM": [
+      "ef3e2fc4-e579-11eb-8816-1e008a0a9295",
+      "n"
+    ],
+    "WWW.77MH.DE": [
+      "ef3e2fc4-e579-11eb-8816-1e008a0a9295",
+      "n"
+    ],
+    "WWW.MANGABZ.COM": [
+      "ef3e4a4a-e579-11eb-8816-1e008a0a9295",
+      "y"
+    ],
+    "WWW.EDDDH.NET": [
+      "ef3e5eae-e579-11eb-8816-1e008a0a9295",
+      "y"
+    ]
+  },
+  "ef3e2fc4-e579-11eb-8816-1e008a0a9295": {
+    "www.177mh.net": {
+      "remark": "新新漫画",
+      "subsite": [
+        "www.77mh.co",
+        "www.77mh.com",
+        "www.77mh.de"
+      ],
+      "configs": {
+        "name": {
+          "is_html_code": true,
+          "headers": "",
+          "roll_to_end": false,
+          "until": "",
+          "scripts": [
+            [
+              "xpath",
+              "//ul[@class=\"ar_list_coc\"]/li[1]/h1"
+            ],
+            [
+              "set_to_var",
+              "name",
+              "el_info",
+              ".text"
+            ]
+          ],
+          "sub_scripts": {}
+        },
+        "vol": {
+          "is_html_code": true,
+          "headers": "",
+          "roll_to_end": false,
+          "until": "",
+          "scripts": [
+            [
+              "xpath",
+              "//ul[@id=\"ar_list_normal ar_rlos_bor\" and @class=\"ar_rlos_bor ar_list_col\"]/li"
+            ],
+            [
+              "set_to_var",
+              "vol_next_url",
+              "eval",
+              "''"
+            ],
+            [
+              "set_to_var",
+              "vols",
+              "sub_el_infos",
+              "./a[1]",
+              ".text",
+              "@href"
+            ]
+          ],
+          "sub_scripts": {}
+        },
+        "file": {
+          "is_html_code": false,
+          "headers": "",
+          "roll_to_end": false,
+          "until": "//img[@id=\"dracga\" and @style]",
+          "scripts": [
+            [
+              "xpath",
+              "//div[@id=\"main\"]/script"
+            ],
+            [
+              "set_to_var",
+              "js_script",
+              "el_info",
+              "@innerHTML"
+            ],
+            [
+              "exec",
+              "els = None"
+            ],
+            [
+              "xpath",
+              "//img[@id=\"dracga\"]"
+            ],
+            [
+              "set_to_var",
+              "current_img",
+              "el_info",
+              "@src"
+            ],
+            [
+              "set_to_var",
+              "src",
+              "eval",
+              "os.path.split(vars['current_img'])[0]"
+            ],
+            [
+              "set_to_var",
+              "name",
+              "eval",
+              "os.path.split(vars['current_img'])[1]"
+            ],
+            [
+              "set_to_var",
+              "dotindex",
+              "eval",
+              "vars['name'].index('.')"
+            ],
+            [
+              "set_to_var",
+              "name_ext",
+              "eval",
+              "vars['name'][vars['dotindex']:]"
+            ],
+            [
+              "set_to_var",
+              "name",
+              "eval",
+              "vars['name'][0:vars['dotindex']]"
+            ],
+            [
+              "set_to_var",
+              "name_len",
+              "eval",
+              "len(vars['name'])"
+            ],
+            [
+              "exec",
+              "import re"
+            ],
+            [
+              "set_to_var",
+              "file_list",
+              "eval",
+              "re.findall('(?!\\|)[0-9]{%d,}(?=\\|)' % vars['name_len'], vars['js_script'], re.M)"
+            ],
+            [
+              "set_to_var",
+              "files",
+              "eval",
+              "list()"
+            ],
+            [
+              "each",
+              "get_down_file",
+              "var",
+              "file_list"
+            ]
+          ],
+          "sub_scripts": {
+            "get_down_file": [
+              [
+                "set_to_var",
+                "_name",
+                "eval",
+                "vars['{$current_each_item$}'] + vars['name_ext']"
+              ],
+              [
+                "exec",
+                "from HiveNetLib.base_tools.string_tool import StringTool"
+              ],
+              [
+                "exec",
+                "vars['files'].append([StringTool.fill_fix_string(vars['{$current_each_index$}'], 6, '0') + vars['name_ext'], '%s/%s' % (vars['src'], vars['_name']), 'http', None])"
+              ]
+            ]
+          }
+        }
+      }
+    }
+  },
+  "ef3e4a4a-e579-11eb-8816-1e008a0a9295": {
+    "www.mangabz.com": {
+      "remark": "Mangabz漫画网站",
+      "subsite": [],
+      "configs": {
+        "name": {
+          "is_html_code": true,
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36"
+          },
+          "roll_to_end": false,
+          "until": "",
+          "scripts": [
+            [
+              "xpath",
+              "//p[@class=\"detail-info-title\"]"
+            ],
+            [
+              "set_to_var",
+              "name",
+              "el_info",
+              ".text"
+            ]
+          ],
+          "sub_scripts": {}
+        },
+        "vol": {
+          "is_html_code": true,
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36"
+          },
+          "roll_to_end": false,
+          "until": "",
+          "scripts": [
+            [
+              "xpath",
+              "//div[@id=\"chapterlistload\"]/a"
+            ],
+            [
+              "set_to_var",
+              "vol_next_url",
+              "eval",
+              "''"
+            ],
+            [
+              "set_to_var",
+              "vols",
+              "el_infos",
+              ".text",
+              "@href"
+            ]
+          ],
+          "sub_scripts": {}
+        },
+        "file": {
+          "is_html_code": false,
+          "headers": "",
+          "roll_to_end": false,
+          "until": "//img[@id=\"cp_image\"]",
+          "scripts": [
+            [
+              "xpath",
+              "//span[@id=\"lbcurrentpage\"]/.."
+            ],
+            [
+              "set_to_var",
+              "total",
+              "el_info",
+              ".text"
+            ],
+            [
+              "exec",
+              "vars['total'] = int(vars['total'].split('-')[1])"
+            ],
+            [
+              "set_to_var",
+              "next_tran_para",
+              "eval",
+              "None"
+            ],
+            [
+              "set_to_var",
+              "files",
+              "eval",
+              "list()"
+            ],
+            [
+              "set_to_var",
+              "current",
+              "eval",
+              "0"
+            ],
+            [
+              "while",
+              "vars['current'] < vars['total']",
+              "get_page_file"
+            ]
+          ],
+          "sub_scripts": {
+            "get_page_file": [
+              [
+                "exec",
+                "els = None"
+              ],
+              [
+                "xpath",
+                "//span[@id=\"lbcurrentpage\"]"
+              ],
+              [
+                "set_to_var",
+                "current",
+                "el_info",
+                ".text"
+              ],
+              [
+                "exec",
+                "vars['current'] = int(vars['current'])"
+              ],
+              [
+                "exec",
+                "els = None"
+              ],
+              [
+                "xpath",
+                "//img[@id=\"cp_image\"]"
+              ],
+              [
+                "set_to_var",
+                "current_url",
+                "el_info",
+                "@src"
+              ],
+              [
+                "exec",
+                "from HiveNetLib.base_tools.string_tool import StringTool"
+              ],
+              [
+                "exec",
+                "vars['files'].append([StringTool.fill_fix_string(str(vars['current']), 6, '0') + '.jpg', vars['current_url'], 'http', None])"
+              ],
+              [
+                "if",
+                "vars['total'] > vars['current']",
+                "show_next"
+              ]
+            ],
+            "show_next": [
+              [
+                "run_script",
+                "ShowNext();"
+              ],
+              [
+                "wait",
+                "0.5"
+              ]
+            ]
+          }
+        }
+      }
+    }
+  },
+  "ef3e5eae-e579-11eb-8816-1e008a0a9295": {
+    "www.edddh.net": {
+      "remark": "EDD动漫-E站(请传入介绍页而非播放页)",
+      "subsite": [],
+      "configs": {
+        "name": {
+          "is_html_code": true,
+          "headers": "",
+          "roll_to_end": false,
+          "until": "",
+          "scripts": [
+            [
+              "xpath",
+              "//div[@id=\"zanpian-score\"]/h1[@class=\"text-overflow\"]"
+            ],
+            [
+              "set_to_var",
+              "name",
+              "el_info",
+              ".text"
+            ]
+          ],
+          "sub_scripts": {}
+        },
+        "file": {
+          "is_html_code": false,
+          "headers": "",
+          "roll_to_end": false,
+          "until": "//div[@class=\"playlist\"]/ul[contains(@class, \" active\")]",
+          "scripts": [
+            [
+              "xpath",
+              "//div[@class=\"playlist\"]/ul[contains(@class, \" active\")]"
+            ],
+            [
+              "children"
+            ],
+            [
+              "set_to_var",
+              "next_tran_para",
+              "eval",
+              "None"
+            ],
+            [
+              "set_to_var",
+              "files",
+              "sub_el_infos",
+              "./a[1]",
+              ".text",
+              "@href",
+              "'http'",
+              "None"
+            ],
+            [
+              "set_to_var",
+              "files_deal",
+              "eval",
+              "{'media_by_page': ['m3u8', 'mp4']}"
+            ]
+          ],
+          "sub_scripts": {}
+        }
+      }
+    }
+  }
+}

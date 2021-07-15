@@ -10,6 +10,7 @@
 
 """The setup.py file for Python comics-down."""
 
+import sys
 from setuptools import setup, find_packages
 
 
@@ -21,10 +22,8 @@ SHORT_DESCRIPTION = """
 A command line tool for download comics from website.""".strip()
 
 DEPENDENCIES = [
-    'HiveNetLib>=0.8.0',
+    'HiveNetLib>=0.8.8',
     'prompt-toolkit>=2.0.0',
-    'beautifulsoup4',
-    'PyExecJS>=1.5.1',
     'Crypto',
     'm3u8',
     'selenium',
@@ -35,7 +34,7 @@ DEPENDENCIES = [
 
 TEST_DEPENDENCIES = []
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 URL = 'https://github.com/snakeclub/comics-down'
 
 setup(

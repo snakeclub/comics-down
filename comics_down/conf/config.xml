@@ -5,12 +5,18 @@
         shell_cmd_name : 可直接执行的命令名称（注册到操作系统的软连接）
         version : 版本，前面无需带V
         language : 当前语言, 默认是en，可以选择zh_cn
+        website_driver_path : 私有网站驱动加载地址, 当前程序目录的相对路径，例如../private_driver
+        down_driver_path : 私有下载驱动加载地址, 当前程序目录的相对路径
         i18n : 多语言翻译文件的存放目录（如果是相对目录，会以启动时的工作目录为准）;
             注：如果不传值，会默认以当前安装包的目录找i18n目录
         shell_encoding : 控制台命令行编码，一般来说windows为GBK，linux为utf-8
+        python_cmd : python命令，根据机器安装情况，可以调整为python3或带上路径
+        downtype_mapping : 默认的下载类型和下载驱动的转换映射关系, http类型的下载默认使用aria2
+        color_set : 命令行配色方案
         message : 命令行的开头提示信息
         shell_cmd_help : 命令行直接执行的帮助信息(json)
         start_tips : 启动时提示的信息(json)
+        exit_with_prompt : 关闭命令行时是否提示用户操作(y/n), 默认为y
         default_dealfun : 默认处理函数配置（匹配不到命令的时候执行）
         on_abort : Ctrl + C 取消本次输入执行函数
         on_exit : Ctrl + D 关闭命令行执行函数
@@ -26,13 +32,21 @@
     -->
     <name>comics-down</name>
     <shell_cmd_name>comics-down</shell_cmd_name>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <language>zh_cn</language>
-    <driver_path>../private_driver</driver_path>
+    <website_driver_path></website_driver_path>
     <down_driver_path/>
     <default_save_path>../temp</default_save_path>
     <i18n/>
     <shell_encoding>GBK</shell_encoding>
+    <python_cmd>python</python_cmd>
+    <downtype_mapping>{"http": "aria2"}</downtype_mapping>
+    <common_wd_overwrite>true</common_wd_overwrite>
+    <color_set>
+        <!-- 设置为空让字体能同时适应黑白背景 -->
+        <input></input>
+        <prompt></prompt>
+    </color_set>
     <message>comics-down /&gt;</message>
     <shell_cmd_help>{
         "en": [
@@ -94,6 +108,7 @@
         ]
     }
     </start_tips>
+    <exit_with_prompt>n</exit_with_prompt>
     <default_dealfun>
         <module_name>HiveNetLib.simple_console.base_cmd</module_name>
         <class_name>CmdDefault</class_name>
@@ -329,8 +344,82 @@
             }
             </help>
         </cmd>
+        <!-- 工具命令-启动代理服务 -->
         <cmd>
-            <command>set_driver_path</command>
+            <command>start_proxy_server</command>
+            <module_name>comics_down.lib.comics_down_cmd</module_name>
+            <class_name>ComicsDownCmd</class_name>
+            <extend_path/>
+            <init_para/>
+            <cmd_para>{
+                "name_para": {
+                    "proxy": ["lib/proxy/selenium_feign_proxy.py"],
+                    "port": []
+                }
+            }
+            </cmd_para>
+            <help>{
+                "en": [
+                    "strat proxy server",
+                    "",
+                    "start_proxy_server [namepara=xxx]",
+                    "    proxy : the proxy python file to start",
+                    "    port : server listen port, default 9000",
+                    "",
+                    "demo: start_proxy_server proxy=xxx",
+                    ""
+                ],
+                "zh_cn": [
+                    "启动指定的代理服务",
+                    "",
+                    "start_proxy_server [namepara=xxx]",
+                    "    proxy : 要启动的代理脚本文件",
+                    "    port : 服务监听端口, 默认为9000",
+                    "",
+                    "示例: start_proxy_server proxy=xxx",
+                    ""
+                ]
+            }
+            </help>
+        </cmd>
+        <!-- 工具命令-关闭代理服务 -->
+        <cmd>
+            <command>stop_proxy_server</command>
+            <module_name>comics_down.lib.comics_down_cmd</module_name>
+            <class_name>ComicsDownCmd</class_name>
+            <extend_path/>
+            <init_para/>
+            <cmd_para>{
+                "name_para": {
+                    "proxy": ["lib/proxy/selenium_feign_proxy.py"]
+                }
+            }
+            </cmd_para>
+            <help>{
+                "en": [
+                    "stop proxy server",
+                    "",
+                    "stop_proxy_server [namepara=xxx]",
+                    "    proxy : the proxy python file to stop",
+                    "",
+                    "demo: stop_proxy_server proxy=xxx",
+                    ""
+                ],
+                "zh_cn": [
+                    "停止指定的代理服务",
+                    "",
+                    "stop_proxy_server [namepara=xxx]",
+                    "    proxy : 要停止的代理脚本文件",
+                    "",
+                    "示例: stop_proxy_server proxy=xxx",
+                    ""
+                ]
+            }
+            </help>
+        </cmd>
+        <!-- 工具命令-设置网站驱动的搜索路径 -->
+        <cmd>
+            <command>set_website_driver_path</command>
             <module_name>comics_down.lib.comics_down_cmd</module_name>
             <class_name>ComicsDownCmd</class_name>
             <extend_path/>
@@ -341,24 +430,25 @@
                 "en": [
                     "Set website driver search path",
                     "",
-                    "set_driver_path path",
+                    "set_website_driver_path path",
                     "    path : the website driver search path",
                     "",
-                    "demo: set_driver_path d:\\test\\",
+                    "demo: set_website_driver_path d:\\test\\",
                     ""
                 ],
                 "zh_cn": [
                     "设置网站驱动的搜索路径",
                     "",
-                    "set_driver_path path",
+                    "set_website_driver_path path",
                     "    path : 要设置的网站驱动搜索目录",
                     "",
-                    "示例: set_driver_path d:\\test\\",
+                    "示例: set_website_driver_path d:\\test\\",
                     ""
                 ]
             }
             </help>
         </cmd>
+        <!-- 工具命令-设置下载驱动的搜索路径 -->
         <cmd>
             <command>set_down_driver_path</command>
             <module_name>comics_down.lib.comics_down_cmd</module_name>
@@ -389,6 +479,7 @@
             }
             </help>
         </cmd>
+        <!-- 工具命令-设置默认保存路径 -->
         <cmd>
             <command>set_default_save_path</command>
             <module_name>comics_down.lib.comics_down_cmd</module_name>
@@ -419,6 +510,7 @@
             }
             </help>
         </cmd>
+        <!-- 工具命令-显示支持的网站列表 -->
         <cmd>
             <command>support</command>
             <module_name>comics_down.lib.comics_down_cmd</module_name>
@@ -447,6 +539,7 @@
             }
             </help>
         </cmd>
+        <!-- 工具命令-下载资源 -->
         <cmd>
             <command>download</command>
             <module_name>comics_down.lib.comics_down_cmd</module_name>
@@ -460,28 +553,39 @@
                     "path": [],
                     "job_file": [],
                     "job_worker": [],
-                    "auto_redo": ["y", "n"],
+                    "sub_process": ["y", "n"],
+                    "auto_redo": [],
                     "encoding": [],
                     "force_update": ["y", "n"],
-                    "job_down_worker": [],
+                    "down_worker": [],
                     "down_overtime": [],
                     "use_break_down": ["y", "n"],
                     "overtime": [],
                     "connect_retry": [],
                     "verify": ["y", "n"],
+                    "website_driver_id": [],
+                    "website_proxy": [],
+                    "website_cookie": [],
+                    "source_index": [],
                     "webdriver": ["Chrome", "Firefox", "Ie", "Edge", "Safari", "PhantomJS"],
                     "wd_wait_all_loaded": ["y", "n"],
                     "wd_overtime": [],
                     "wd_headless": ["y", "n"],
                     "wd_min": ["y", "n"],
+                    "wd_no_image": ["y", "n"],
+                    "wd_default_down_path": [],
                     "search_mode": ["y", "n"],
-                    "show_rate": ["y", "n"]
+                    "show_rate": ["y", "n"],
+                    "downtype_mapping": [],
+                    "down_proxy": [],
+                    "down_cookie": [],
+                    "debug_path": []
                 }
             }
             </cmd_para>
             <help>{
                 "en": [
-                        "download comics",
+                        "download all resource of comics",
                         "",
                         "download [name_para=...] ...",
                         "    url : index page url of comics, you can set name but not set url when continue download a comic",
@@ -489,29 +593,40 @@
                         "    path : save path, use default save paht when the para not set",
                         "    job_file : down job list file (with path), each line is a url in the content",
                         "    job_worker : worker number for job (use with job_file), default 1",
-                        "    auto_redo : if auto redo job if failed (y/n)，default n",
+                        "    sub_process : if start by sub_process mode (y/n), default n",
+                        "    auto_redo : auto redo job times if failed，default 0",
                         "    encoding : page encoding, default utf-8",
                         "    force_update : if force to update vol info (y/n), can use to get new vol when last job is done, default n",
-                        "    job_down_worker : download worker number of each job, default 10",
+                        "    down_worker : download worker number of each job, default 10",
                         "    down_overtime : the download worker overtime, sec, default 300",
                         "    use_break_down : try use break_continue to download files (y/n)，default y",
                         "    overtime : overtime when connect to web page, sec, default 30",
                         "    connect_retry : retry time when connect fail, default 3",
                         "    verify : is vailidate with ssl on connect (y/n), default y",
                         "    remove_wget_tmp : remove temp file when wget download fail (y/n), default y",
-                        "    webdriver : some website must use webdriver, set webdriver type",
+                        "    website_driver_id : define the website driver id to use",
+                        "    website_proxy : define the proxy server for website connect, like: 'https=https://127.0.0.1:8080;http=http://...'",
+                        "    website_cookie : define the cookie file for website connect",
+                        "    source_index : if website has more download sources, set the index of selection, 0 means choose the active one",
+                        "    webdriver : some website must use webdriver, set webdriver type, Chrome can use for now",
                         "    wd_wait_all_loaded : if wait pageload finished when use webdriver (y/n)，n means use condition, default n",
                         "    wd_overtime : overtime when use webdriver, sec, default 30",
                         "    wd_headless : use headless mode when use webdriver (y/n), default n",
                         "    wd_min : min size when use webdriver (y/n)，default n",
+                        "    wd_no_image : define if download image in page load for webdriver(y/n), default n",
+                        "    wd_default_down_path : set the default download path for webdriver",
                         "    search_mode : if use search mode (y/n), search mode will search all downloaded file, and not to download if file is exists, default n",
                         "    show_rate : if show file download rate (use wget), y/n，default n",
+                        "    downtype_mapping : self define of mapping download type change mapping json, like: '{\"http\": \"aria2\"}' to use aria2 to download http, support '{\"*\", \"aria2\"}' mode",
+                        "    down_proxy : define the proxy server for download, like: 'https=https://127.0.0.1:8080;http=http://...'",
+                        "    down_cookie : define cookie file for download",
+                        "    debug_path : define log file path of debug, if define mean start debug",
                         "",
                         "demo: download url=xxx",
                         ""
                 ],
                 "zh_cn": [
-                        "下载漫画",
+                        "下载漫画所有资源",
                         "",
                         "download [name_para=...] ...",
                         "    url : 漫画的目录索引页，如果是继续下载可以只送漫画名不送url",
@@ -519,26 +634,543 @@
                         "    path : 下载保存目录，如果不送则保存至默认下载目录",
                         "    job_file : 下载任务列表文件(含路径), 每行为一个下载url",
                         "    job_worker : 多任务并行下载的工作数量(与job_file配套使用), 默认只启动一个线程",
-                        "    auto_redo : 是否失败自动重新执行(y/n)，默认为n",
+                        "    sub_process : 是否通过子进程方式启动任务(y/n)，文件下载方式将忽略该参数，默认为n",
+                        "    auto_redo : 失败自动重试次数，默认为0",
                         "    encoding : 网页编码，默认为utf-8",
                         "    force_update : 是否强制更新卷信息(y/n)，对于已完成的任务可以重新获取卷信息，默认为n",
-                        "    job_down_worker : 每个任务开启的文件并行下载工作数量，默认为10",
+                        "    down_worker : 每个任务开启的文件并行下载工作数量，默认为10",
                         "    down_overtime : 下载工作线程超时时间，单位为秒，默认300秒",
                         "    use_break_down : 尝试使用文件下载断点续传(y/n)，默认为y",
                         "    overtime : 连接网站的超时时间，单位为秒，默认30秒",
                         "    connect_retry : 连接网站失败自动重试次数，默认3次",
                         "    verify : 打开网页是否进行证书验证(y/n)，默认y",
                         "    remove_wget_tmp : 删除wget下载失败时的临时文件(y/n), 默认为y",
-                        "    webdriver : 某些网站要使用webdriver方式获取，指定webdriver的类型",
+                        "    website_driver_id : 指定要使用的网站驱动id",
+                        "    website_proxy : 解析网站连接需要使用的代理服务配置, 例如'https=https://127.0.0.1:8080;http=http://...'",
+                        "    website_cookie : 解析网站连接需要送入的cookie信息文件路径",
+                        "    source_index : 如果网站有多个下载资源，选择第几个, 0代表选择当前激活的那个",
+                        "    webdriver : 某些网站要使用webdriver方式获取，指定webdriver的类型, 暂时只有Chrome可保证正常使用",
                         "    wd_wait_all_loaded : webdriver情况下是否等待页面装载完(y/n)，n代表使用条件判断, 默认n",
                         "    wd_overtime : webdriver情况下的超时时间，单位为秒，默认30秒",
                         "    wd_headless : webdriver情况下是否使用无浏览器形式(y/n)，默认n",
                         "    wd_min : webdriver情况下是否最小化窗口(y/n)，默认n",
+                        "    wd_no_image : webdriver情况下是否不下载图片(y/n), 默认n",
+                        "    wd_default_down_path : 设置webdriver浏览器的默认下载路径",
                         "    search_mode : 是否启动搜索模式(y/n), 该模式会重新遍历一次所有资源，对于已下载过的文件不再下载, 默认n",
                         "    show_rate : 是否显示单文件下载进度(wget模式), y/n，默认n",
+                        "    downtype_mapping : 自定义下载类型和驱动的映射json字典，例如可以传入'{\"http\": \"aria2\"}'切换下载工具, 支持'{\"*\", \"aria2\"}'的通配符方式",
+                        "    down_proxy : 下载资源所使用的代理服务配置, 例如'https=https://127.0.0.1:8080;http=http://...'",
+                        "    down_cookie : 下载资源所需送入的cookie信息文件路径",
+                        "    debug_path : 指定debug的日志文件路径，指定了路径代表启动的debug处理",
                         "",
                         "示例: download url=xxx",
                         ""
+                ]
+            }
+            </help>
+        </cmd>
+        <!-- 工具命令-创建下载资源索引文件 -->
+        <cmd>
+            <command>get_down_index</command>
+            <module_name>comics_down.lib.comics_down_cmd</module_name>
+            <class_name>ComicsDownCmd</class_name>
+            <extend_path/>
+            <init_para/>
+            <cmd_para>{
+                "name_para": {
+                    "url": [],
+                    "name": [],
+                    "path": [],
+                    "job_file": [],
+                    "job_worker": [],
+                    "sub_process": ["y", "n"],
+                    "auto_redo": [],
+                    "encoding": [],
+                    "force_update": ["y", "n"],
+                    "overtime": [],
+                    "connect_retry": [],
+                    "verify": ["y", "n"],
+                    "website_driver_id": [],
+                    "website_proxy": [],
+                    "website_cookie": [],
+                    "source_index": [],
+                    "webdriver": ["Chrome", "Firefox", "Ie", "Edge", "Safari", "PhantomJS"],
+                    "wd_wait_all_loaded": ["y", "n"],
+                    "wd_overtime": [],
+                    "wd_headless": ["y", "n"],
+                    "wd_min": ["y", "n"],
+                    "wd_no_image": ["y", "n"],
+                    "wd_default_down_path": [],
+                    "search_mode": ["y", "n"],
+                    "debug_path": []
+                }
+            }
+            </cmd_para>
+            <help>{
+                "en": [
+                        "get download index file, can be use in download",
+                        "",
+                        "get_down_index [name_para=...] ...",
+                        "    url : index page url of comics, you can set name but not set url when continue download a comic",
+                        "    name : the name of comic, set to make the dir name, get name from web when the para not set",
+                        "    path : save path, use default save paht when the para not set",
+                        "    job_file : down job list file (with path), each line is a url in the content",
+                        "    job_worker : worker number for job (use with job_file), default 1",
+                        "    sub_process : if start by sub_process mode (y/n), default n",
+                        "    auto_redo : auto redo job times if failed，default 0",
+                        "    encoding : page encoding, default utf-8",
+                        "    force_update : if force to update vol info (y/n), can use to get new vol when last job is done, default n",
+                        "    overtime : overtime when connect to web page, sec, default 30",
+                        "    connect_retry : retry time when connect fail, default 3",
+                        "    verify : is vailidate with ssl on connect (y/n), default y",
+                        "    website_driver_id : define the website driver id to use",
+                        "    website_proxy : define the proxy server for website connect, like: 'https=https://127.0.0.1:8080;http=http://...'",
+                        "    website_cookie : define the cookie file for website connect",
+                        "    source_index : if website has more download sources, set the index of selection, 0 means choose the active one",
+                        "    webdriver : some website must use webdriver, set webdriver type, Chrome can use for now",
+                        "    wd_wait_all_loaded : if wait pageload finished when use webdriver (y/n)，n means use condition, default n",
+                        "    wd_overtime : overtime when use webdriver, sec, default 30",
+                        "    wd_headless : use headless mode when use webdriver (y/n), default n",
+                        "    wd_min : min size when use webdriver (y/n)，default n",
+                        "    wd_no_image : define if download image in page load for webdriver(y/n), default n",
+                        "    wd_default_down_path : set the default download path for webdriver",
+                        "    search_mode : if use search mode (y/n), search mode will search all downloaded file, and not to download if file is exists, default n",
+                        "    debug_path : define log file path of debug, if define mean start debug",
+                        "",
+                        "demo: get_down_index url=xxx",
+                        ""
+                ],
+                "zh_cn": [
+                        "创建下载索引文件，可用于后续下载操作",
+                        "",
+                        "get_down_index [name_para=...] ...",
+                        "    url : 漫画的目录索引页，如果是继续下载可以只送漫画名不送url",
+                        "    name : 漫画名，如果指定则以该文件名作为根目录保存，如果不送则从网页中获取名字",
+                        "    path : 下载保存目录，如果不送则保存至默认下载目录",
+                        "    job_file : 下载任务列表文件(含路径), 每行为一个下载url",
+                        "    job_worker : 多任务并行下载的工作数量(与job_file配套使用), 默认只启动一个线程",
+                        "    sub_process : 是否通过子进程方式启动任务(y/n)，文件下载方式将忽略该参数，默认为n",
+                        "    auto_redo : 失败自动重试次数，默认为0",
+                        "    encoding : 网页编码，默认为utf-8",
+                        "    force_update : 是否强制更新卷信息(y/n)，对于已完成的任务可以重新获取卷信息，默认为n",
+                        "    overtime : 连接网站的超时时间，单位为秒，默认30秒",
+                        "    connect_retry : 连接网站失败自动重试次数，默认3次",
+                        "    verify : 打开网页是否进行证书验证(y/n)，默认y",
+                        "    website_driver_id : 指定要使用的网站驱动id",
+                        "    website_proxy : 解析网站连接需要使用的代理服务配置, 例如'https=https://127.0.0.1:8080;http=http://...'",
+                        "    website_cookie : 解析网站连接需要送入的cookie信息文件路径",
+                        "    source_index : 如果网站有多个下载资源，选择第几个, 0代表选择当前激活的那个",
+                        "    webdriver : 某些网站要使用webdriver方式获取，指定webdriver的类型, 暂时只有Chrome可保证正常使用",
+                        "    wd_wait_all_loaded : webdriver情况下是否等待页面装载完(y/n)，n代表使用条件判断, 默认n",
+                        "    wd_overtime : webdriver情况下的超时时间，单位为秒，默认30秒",
+                        "    wd_headless : webdriver情况下是否使用无浏览器形式(y/n)，默认n",
+                        "    wd_min : webdriver情况下是否最小化窗口(y/n)，默认n",
+                        "    wd_no_image : webdriver情况下是否不下载图片(y/n), 默认n",
+                        "    wd_default_down_path : 设置webdriver浏览器的默认下载路径",
+                        "    search_mode : 是否启动搜索模式(y/n), 该模式会重新遍历一次所有资源，对于已下载过的文件不再下载, 默认n",
+                        "    debug_path : 指定debug的日志文件路径，指定了路径代表启动的debug处理",
+                        "",
+                        "示例: get_down_index url=xxx",
+                        ""
+                ]
+            }
+            </help>
+        </cmd>
+        <!-- 工具命令-查看资源索引清单 -->
+        <cmd>
+            <command>show_down_index</command>
+            <module_name>comics_down.lib.comics_down_cmd</module_name>
+            <class_name>ComicsDownCmd</class_name>
+            <extend_path/>
+            <init_para/>
+            <cmd_para>{
+                "name_para": {
+                    "name": [],
+                    "path": [],
+                    "type": ["info", "vols", "files"],
+                    "vol_num": []
+                }
+            }
+            </cmd_para>
+            <help>{
+                "en": [
+                        "show the download index infos",
+                        "",
+                        "show_down_index [name_para=...] ...",
+                        "    name : the name of comic (dir name of save path)",
+                        "    path : save path, use default save paht when the para not set",
+                        "    type : show type, info-resource base info, vols-list of vols，files-list of files",
+                        "    vol_num : set the vol num for files type",
+                        "",
+                        "demo: show_down_index name=xxx",
+                        ""
+                ],
+                "zh_cn": [
+                        "查看下载索引信息",
+                        "",
+                        "show_down_index [name_para=...] ...",
+                        "    name : 漫画名（保存的路径名）",
+                        "    path : 下载保存目录，如果不送则认为是默认下载目录",
+                        "    type : 指示显示类型，info-资源基本信息, vols-卷清单，files-文件清单",
+                        "    vol_num : 文件清单模式，可以指定只显示某个卷",
+                        "",
+                        "示例: show_down_index name=xxx",
+                        ""
+                ]
+            }
+            </help>
+        </cmd>
+        <!-- 工具命令-下载指定文件 -->
+        <cmd>
+            <command>download_file</command>
+            <module_name>comics_down.lib.comics_down_cmd</module_name>
+            <class_name>ComicsDownCmd</class_name>
+            <extend_path/>
+            <init_para/>
+            <cmd_para>{
+                "name_para": {
+                    "url": [],
+                    "save_file": [],
+                    "extend_json": [],
+                    "downtype": [],
+                    "down_overtime": [],
+                    "use_break_down": ["y", "n"],
+                    "overtime": [],
+                    "connect_retry": [],
+                    "verify": ["y", "n"],
+                    "show_rate": ["y", "n"],
+                    "downtype_mapping": [],
+                    "down_proxy": [],
+                    "down_cookie": []
+                }
+            }
+            </cmd_para>
+            <help>{
+                "en": [
+                    "download file",
+                    "",
+                    "download_file [namepara=xxx]",
+                    "    url : the url of file to download",
+                    "    save_file : file save path and filename (relative path of current work dir)",
+                    "    extend_json : the json string of extend for down driver, like: '{\"para\":\"value\", ...}'",
+                    "    downtype : set downtype of down driver to urse, default http",
+                    "    down_overtime : the download worker overtime, sec, default 300",
+                    "    use_break_down : try use break_continue to download files (y/n)，default y",
+                    "    overtime : overtime when connect to web page, sec, default 30",
+                    "    connect_retry : retry time when connect fail, default 3",
+                    "    verify : is vailidate with ssl on connect (y/n), default y",
+                    "    show_rate : if show file download rate (use wget), y/n，default n",
+                    "    downtype_mapping : self define of mapping download type change mapping json, like: '{\"http\": \"aria2\"}' to use aria2 to download http, support '{\"*\", \"aria2\"}' mode",
+                    "    down_proxy : define the proxy server for download, like: 'https=https://127.0.0.1:8080;http=http://...'",
+                    "    down_cookie : define cookie file for download",
+                    "",
+                    "demo: download_file url=xxx save_file=a.mp4",
+                    ""
+                ],
+                "zh_cn": [
+                    "下载指定文件",
+                    "",
+                    "download_file [namepara=xxx]",
+                    "    url : 要下载的文件url",
+                    "    save_file : 要保存的文件路径（与当前工作路径的相对路径）",
+                    "    extend_json : 下载驱动可传入的扩展信息json字符串, 例如'{\"para\":\"value\", ...}'",
+                    "    downtype : 指定下载驱动的下载类型, 默认为http",
+                    "    down_overtime : 下载工作线程超时时间，单位为秒，默认300秒",
+                    "    use_break_down : 尝试使用文件下载断点续传(y/n)，默认为y",
+                    "    overtime : 连接网站的超时时间，单位为秒，默认30秒",
+                    "    connect_retry : 连接网站失败自动重试次数，默认3次",
+                    "    verify : 打开网页是否进行证书验证(y/n)，默认y",
+                    "    show_rate : 是否显示单文件下载进度(wget模式), y/n，默认n",
+                    "    downtype_mapping : 自定义下载类型和驱动的映射json字典，例如可以传入'{\"http\": \"aria2\"}'切换下载工具, 支持'{\"*\", \"aria2\"}'的通配符方式",
+                    "    down_proxy : 下载资源所使用的代理服务配置, 例如'https=https://127.0.0.1:8080;http=http://...'",
+                    "    down_cookie : 下载资源所需送入的cookie信息文件路径",
+                    "",
+                    "示例: download_file url=xxx save_file=a.mp4",
+                    ""
+                ]
+            }
+            </help>
+        </cmd>
+        <!-- 工具命令-获取视频下载地址 -->
+        <cmd>
+            <command>analysis_video_urls</command>
+            <module_name>comics_down.lib.comics_down_cmd</module_name>
+            <class_name>ComicsDownCmd</class_name>
+            <extend_path/>
+            <init_para/>
+            <cmd_para>{
+                "name_para": {
+                    "url": [],
+                    "extends": [],
+                    "encoding": [],
+                    "overtime": [],
+                    "connect_retry": [],
+                    "verify": ["y", "n"],
+                    "loaded_wait_time": [],
+                    "website_proxy": [],
+                    "website_cookie": [],
+                    "webdriver": ["Chrome", "Firefox", "Ie", "Edge", "Safari", "PhantomJS"],
+                    "wd_wait_all_loaded": ["y", "n"],
+                    "wd_overtime": [],
+                    "wd_headless": ["y", "n"],
+                    "wd_min": ["y", "n"],
+                    "wd_no_image": ["y", "n"],
+                    "debug_path": []
+                }
+            }
+            </cmd_para>
+            <help>{
+                "en": [
+                    "analysis web page to get video urls",
+                    "",
+                    "analysis_video_urls [url=xxx]",
+                    "    url : set the web page url",
+                    "    extends : filename extension list, use \",\" to split, default 'm3u8,mp4'",
+                    "    encoding : page encoding, default utf-8",
+                    "    overtime : overtime when connect to web page, sec, default 30",
+                    "    connect_retry : retry time when connect fail, default 3",
+                    "    verify : is vailidate with ssl on connect (y/n), default y",
+                    "    loaded_wait_time : wait video load time after page loaded, default 10 seconds",
+                    "    website_proxy : define the proxy server for website connect, like: 'https=https://127.0.0.1:8080;http=http://...'",
+                    "    website_cookie : define the cookie file for website connect",
+                    "    webdriver : some website must use webdriver, set webdriver type, Chrome can use for now",
+                    "    wd_wait_all_loaded : if wait pageload finished when use webdriver (y/n)，n means use condition, default n",
+                    "    wd_overtime : overtime when use webdriver, sec, default 30",
+                    "    wd_headless : use headless mode when use webdriver (y/n), default n",
+                    "    wd_min : min size when use webdriver (y/n)，default n",
+                    "    wd_no_image : define if download image in page load for webdriver(y/n), default n",
+                    "    debug_path : define log file path of debug, if define mean start debug",
+                    "",
+                    "demo: analysis_video_urls url=xxx",
+                    ""
+                ],
+                "zh_cn": [
+                    "解析指定页面的视频地址",
+                    "",
+                    "analysis_video_urls [url=xxx]",
+                    "    url : 要解析的页面",
+                    "    extends : 文件扩展名清单，多个使用逗号分隔，默认为'm3u8,mp4'",
+                    "    encoding : 网页编码，默认为utf-8",
+                    "    overtime : 连接网站的超时时间，单位为秒，默认30秒",
+                    "    connect_retry : 连接网站失败自动重试次数，默认3次",
+                    "    verify : 打开网页是否进行证书验证(y/n)，默认为y",
+                    "    loaded_wait_time : 页面加载后等待视频加载时长，单位为秒，默认为10秒",
+                    "    website_proxy : 解析网站连接需要使用的代理服务配置, 例如'https=https://127.0.0.1:8080;http=http://...'",
+                    "    website_cookie : 解析网站连接需要送入的cookie信息文件路径",
+                    "    webdriver : 某些网站要使用webdriver方式获取，指定webdriver的类型, 暂时只有Chrome可保证正常使用",
+                    "    wd_wait_all_loaded : webdriver情况下是否等待页面装载完(y/n)，n代表使用条件判断, 默认n",
+                    "    wd_overtime : webdriver情况下的超时时间，单位为秒，默认30秒",
+                    "    wd_headless : webdriver情况下是否使用无浏览器形式(y/n)，默认n",
+                    "    wd_min : webdriver情况下是否最小化窗口(y/n)，默认n",
+                    "    wd_no_image : webdriver情况下是否不下载图片(y/n), 默认n",
+                    "    debug_path : 指定debug的日志文件路径，指定了路径代表启动的debug处理",
+                    "",
+                    "示例: analysis_video_urls url=xxx",
+                    ""
+                ]
+            }
+            </help>
+        </cmd>
+        <!-- 工具命令-通过视频页面下载视频文件 -->
+        <cmd>
+            <command>download_webpage_video</command>
+            <module_name>comics_down.lib.comics_down_cmd</module_name>
+            <class_name>ComicsDownCmd</class_name>
+            <extend_path/>
+            <init_para/>
+            <cmd_para>{
+                "name_para": {
+                    "url": [],
+                    "path": [],
+                    "filename": [],
+                    "extends": [],
+                    "encoding": [],
+                    "overtime": [],
+                    "connect_retry": [],
+                    "verify": ["y", "n"],
+                    "loaded_wait_time": [],
+                    "website_proxy": [],
+                    "website_cookie": [],
+                    "webdriver": ["Chrome", "Firefox", "Ie", "Edge", "Safari", "PhantomJS"],
+                    "wd_wait_all_loaded": ["y", "n"],
+                    "wd_overtime": [],
+                    "wd_headless": ["y", "n"],
+                    "wd_min": ["y", "n"],
+                    "wd_no_image": ["y", "n"],
+                    "extend_json": [],
+                    "down_overtime": [],
+                    "use_break_down": ["y", "n"],
+                    "show_rate": ["y", "n"],
+                    "downtype_mapping": [],
+                    "down_proxy": [],
+                    "down_cookie": [],
+                    "debug_path": []
+                }
+            }
+            </cmd_para>
+            <help>{
+                "en": [
+                    "analysis web page and download video file",
+                    "",
+                    "download_webpage_video [url=xxx]",
+                    "    url : set the web page url",
+                    "    path : save path, use default save paht when the para not set",
+                    "    filename : filename of save as",
+                    "    extends : filename extension list, use \",\" to split, default 'm3u8,mp4'",
+                    "    encoding : page encoding, default utf-8",
+                    "    overtime : overtime when connect to web page, sec, default 30",
+                    "    connect_retry : retry time when connect fail, default 3",
+                    "    verify : is vailidate with ssl on connect (y/n), default y",
+                    "    loaded_wait_time : wait video load time after page loaded, default 10 seconds",
+                    "    website_proxy : define the proxy server for website connect, like: 'https=https://127.0.0.1:8080;http=http://...'",
+                    "    website_cookie : define the cookie file for website connect",
+                    "    webdriver : some website must use webdriver, set webdriver type, Chrome can use for now",
+                    "    wd_wait_all_loaded : if wait pageload finished when use webdriver (y/n)，n means use condition, default n",
+                    "    wd_overtime : overtime when use webdriver, sec, default 30",
+                    "    wd_headless : use headless mode when use webdriver (y/n), default n",
+                    "    wd_min : min size when use webdriver (y/n)，default n",
+                    "    wd_no_image : define if download image in page load for webdriver(y/n), default n",
+                    "    extend_json : the json string of extend for down driver, like: '{\"para\":\"value\", ...}'",
+                    "    downtype : set downtype of down driver to urse, default http",
+                    "    down_overtime : the download worker overtime, sec, default 300",
+                    "    use_break_down : try use break_continue to download files (y/n)，default y",
+                    "    show_rate : if show file download rate (use wget), y/n，default n",
+                    "    downtype_mapping : self define of mapping download type change mapping json, like: '{\"http\": \"aria2\"}' to use aria2 to download http, support '{\"*\", \"aria2\"}' mode",
+                    "    down_proxy : define the proxy server for download, like: 'https=https://127.0.0.1:8080;http=http://...'",
+                    "    down_cookie : define cookie file for download",
+                    "    debug_path : define log file path of debug, if define mean start debug",
+                    "",
+                    "demo: analysis_video_urls url=xxx",
+                    ""
+                ],
+                "zh_cn": [
+                    "解析指定页面并下载视频文件",
+                    "",
+                    "download_webpage_video [url=xxx]",
+                    "    url : 要解析的页面",
+                    "    path : 下载保存目录，如果不送则保存至默认下载目录",
+                    "    filename : 下载文件另存为的文件名",
+                    "    extends : 文件扩展名清单，多个使用逗号分隔，默认为'm3u8,mp4'",
+                    "    encoding : 网页编码，默认为utf-8",
+                    "    overtime : 连接网站的超时时间，单位为秒，默认30秒",
+                    "    connect_retry : 连接网站失败自动重试次数，默认3次",
+                    "    verify : 打开网页是否进行证书验证(y/n)，默认y",
+                    "    loaded_wait_time : 页面加载后等待视频加载时长，单位为秒，默认为10秒",
+                    "    website_proxy : 解析网站连接需要使用的代理服务配置, 例如'https=https://127.0.0.1:8080;http=http://...'",
+                    "    website_cookie : 解析网站连接需要送入的cookie信息文件路径",
+                    "    webdriver : 某些网站要使用webdriver方式获取，指定webdriver的类型, 暂时只有Chrome可保证正常使用",
+                    "    wd_wait_all_loaded : webdriver情况下是否等待页面装载完(y/n)，n代表使用条件判断, 默认n",
+                    "    wd_overtime : webdriver情况下的超时时间，单位为秒，默认30秒",
+                    "    wd_headless : webdriver情况下是否使用无浏览器形式(y/n)，默认n",
+                    "    wd_min : webdriver情况下是否最小化窗口(y/n)，默认n",
+                    "    wd_no_image : webdriver情况下是否不下载图片(y/n), 默认n",
+                    "    extend_json : 下载驱动可传入的扩展信息json字符串, 例如'{\"para\":\"value\", ...}'",
+                    "    downtype : 指定下载驱动的下载类型, 默认为http",
+                    "    down_overtime : 下载工作线程超时时间，单位为秒，默认300秒",
+                    "    use_break_down : 尝试使用文件下载断点续传(y/n)，默认为y",
+                    "    show_rate : 是否显示单文件下载进度(wget模式), y/n，默认n",
+                    "    downtype_mapping : 自定义下载类型和驱动的映射json字典，例如可以传入'{\"http\": \"aria2\"}'切换下载工具, 支持'{\"*\", \"aria2\"}'的通配符方式",
+                    "    down_proxy : 下载资源所使用的代理服务配置, 例如'https=https://127.0.0.1:8080;http=http://...'",
+                    "    down_cookie : 下载资源所需送入的cookie信息文件路径",
+                    "    debug_path : 指定debug的日志文件路径，指定了路径代表启动的debug处理",
+                    "",
+                    "示例: download_webpage_video url=xxx",
+                    ""
+                ]
+            }
+            </help>
+        </cmd>
+        <!-- 工具命令-解析元素xpath -->
+        <cmd>
+            <command>analysis_xpath</command>
+            <module_name>comics_down.lib.comics_down_cmd</module_name>
+            <class_name>ComicsDownCmd</class_name>
+            <extend_path/>
+            <init_para/>
+            <cmd_para>{
+                "name_para": {
+                    "url": [],
+                    "content": [],
+                    "use_html_code": ["y", "n"],
+                    "attr_name": [],
+                    "is_tail": ["y", "n"],
+                    "selector_up_level": [],
+                    "split_class": ["y", "n"],
+                    "encoding": [],
+                    "overtime": [],
+                    "connect_retry": [],
+                    "verify": ["y", "n"],
+                    "loaded_wait_time": [],
+                    "website_proxy": [],
+                    "website_cookie": [],
+                    "webdriver": ["Chrome", "Firefox", "Ie", "Edge", "Safari", "PhantomJS"],
+                    "wd_wait_all_loaded": ["y", "n"],
+                    "wd_overtime": [],
+                    "wd_headless": ["y", "n"],
+                    "wd_min": ["y", "n"],
+                    "wd_no_image": ["y", "n"],
+                    "debug_path": []
+                }
+            }
+            </cmd_para>
+            <help>{
+                "en": [
+                    "analysis xpath of element",
+                    "",
+                    "analysis_xpath url=xxx content='xxx'",
+                    "    url : set the web page url",
+                    "    content : the content to search (full match)",
+                    "    use_html_code : use static code of page(y/n), n means use dom code of page, default y",
+                    "    attr_name : the name of attribute to search content, if not set means search content from text",
+                    "    is_tail : when attr_name not set, tell the check program if content is tail of children element(y/n), default n",
+                    "    selector_up_level : set search level limit from parent nodes, default 3, -1 means no limit",
+                    "    split_class : if split class in xpath（y/n), default n",
+                    "    encoding : page encoding, default utf-8",
+                    "    overtime : overtime when connect to web page, sec, default 30",
+                    "    connect_retry : retry time when connect fail, default 3",
+                    "    verify : is vailidate with ssl on connect (y/n), default y",
+                    "    loaded_wait_time : wait video load time after page loaded, default 10 seconds",
+                    "    website_proxy : define the proxy server for website connect, like: 'https=https://127.0.0.1:8080;http=http://...'",
+                    "    website_cookie : define the cookie file for website connect",
+                    "    webdriver : some website must use webdriver, set webdriver type, Chrome can use for now",
+                    "    wd_wait_all_loaded : if wait pageload finished when use webdriver (y/n)，n means use condition, default n",
+                    "    wd_overtime : overtime when use webdriver, sec, default 30",
+                    "    wd_headless : use headless mode when use webdriver (y/n), default n",
+                    "    wd_min : min size when use webdriver (y/n)，default n",
+                    "    wd_no_image : define if download image in page load for webdriver(y/n), default n",
+                    "    debug_path : define log file path of debug, if define mean start debug",
+                    "",
+                    "demo: analysis_xpath url=xxx content='xxx' use_html_code=n",
+                    ""
+                ],
+                "zh_cn": [
+                    "解析指定元素的xpath",
+                    "",
+                    "analysis_xpath url=xxx content='xxx'",
+                    "    url : 要解析的页面",
+                    "    content : 要解析的内容文本(完全匹配)",
+                    "    use_html_code : 是否仅使用页面源码分析(y/n), n代表需获取动态页面代码, 默认为y",
+                    "    attr_name : 内容属性名，如果不指定代表内容来自显示的text",
+                    "    is_tail : text情况，指示是否子对象的tail部分(y/n), 默认为n",
+                    "    selector_up_level : 从当前元素向父节点查找几层, 默认3层, -1代表一直往上追索",
+                    "    split_class : 是否将类拆开单个获取（y/n, 将会增加需匹配的xpath数量, 降低效率）, 默认为n",
+                    "    encoding : 网页编码，默认为utf-8",
+                    "    overtime : 连接网站的超时时间，单位为秒，默认30秒",
+                    "    connect_retry : 连接网站失败自动重试次数，默认3次",
+                    "    verify : 打开网页是否进行证书验证(y/n)，默认为y",
+                    "    loaded_wait_time : 页面加载后等待视频加载时长，单位为秒，默认为10秒",
+                    "    website_proxy : 解析网站连接需要使用的代理服务配置, 例如'https=https://127.0.0.1:8080;http=http://...'",
+                    "    website_cookie : 解析网站连接需要送入的cookie信息文件路径",
+                    "    webdriver : 某些网站要使用webdriver方式获取，指定webdriver的类型, 暂时只有Chrome可保证正常使用",
+                    "    wd_wait_all_loaded : webdriver情况下是否等待页面装载完(y/n)，n代表使用条件判断, 默认n",
+                    "    wd_overtime : webdriver情况下的超时时间，单位为秒，默认30秒",
+                    "    wd_headless : webdriver情况下是否使用无浏览器形式(y/n)，默认n",
+                    "    wd_min : webdriver情况下是否最小化窗口(y/n)，默认n",
+                    "    wd_no_image : webdriver情况下是否不下载图片(y/n), 默认n",
+                    "    debug_path : 指定debug的日志文件路径，指定了路径代表启动的debug处理",
+                    "",
+                    "示例: analysis_xpath url=xxx content='xxx' use_html_code=n",
+                    ""
                 ]
             }
             </help>

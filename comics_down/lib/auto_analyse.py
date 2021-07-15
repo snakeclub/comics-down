@@ -19,16 +19,14 @@ import ssl
 import time
 import urllib
 import copy
-from bs4 import BeautifulSoup
-from bs4.element import Tag
-from html.parser import HTMLParser
+import html
 import traceback
-from HiveNetLib.base_tools.net_tool import NetTool
-from selenium.webdriver.chrome.options import Options
+from HiveNetLib.html_parser import HtmlElement, HtmlParser
 # 根据当前文件路径将包路径纳入，在非安装的情况下可以引用到
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), os.path.pardir, os.path.pardir)))
-from comics_down.lib.driver_fw import BaseDriverFW
+from comics_down.lib.core import Tools
+from comics_down.lib.webdriver_tool import WebDriverTool
 
 __MOUDLE__ = 'auto_analyse'  # 模块名
 __DESCRIPT__ = u'自动分析资源模块'  # 模块描述
@@ -39,7 +37,7 @@ __PUBLISH__ = '2020.10.25'  # 发布日期
 # 取消全局ssl验证
 ssl._create_default_https_context = ssl._create_unverified_context
 
-headers = {
+HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36",
 }
 
@@ -50,17 +48,23 @@ class AnalyzeTool(object):
     """
 
     @classmethod
-    def get_media_url(cls, url: str, type_list: list, **para_dict):
+    def get_media_url(cls, url: str, type_list: list = None, back_all: bool = False, **para_dict):
         """
-        解析页面中的多媒体资源
+        解析播放页面中的多媒体资源
 
         @param {str} url - 要解析的页面url
-        @param {list} type_list - 要解析的视频类型, 例如 ['m3u8', 'mp4']
+        @param {list} type_list=None - 要解析的视频类型, 例如 ['m3u8', 'mp4']
+        @param {bool} back_all=False - 返回全部可能url清单
         @param {kwargs}  para_dict - 页面打开的参数配置
+            除download的通用参数外，增加以下参数：
+            loaded_wait_time - 等待页面加载视频的时间，单位为秒，默认为10秒
 
-        @returns {str} - 解析到的m3u8文件下载地址
+        @returns {str|list} - 解析到的视频文件下载地址，如果back_all为False优先返回http开头的url，否则返回列表
         """
-        # 生成匹配规则
+        if type_list is None:
+            type_list = ['m3u8', 'mp4']
+
+        # 生成匹配规则, 在页面中查找带有指定视频扩展名后缀的字符串位置 .m3u8 或 .mp4
         _regex = re.compile(
             '\\.%s' % '|\\.'.join(type_list), re.I | re.M
         )
@@ -69,13 +73,17 @@ class AnalyzeTool(object):
         try:
             _html = cls._get_web_html_code(url, **para_dict)
         except:
-            # 有可能会403错误
+            # 有可能会403错误, 不用抛出异常，后面会用selenium浏览器重新执行一次
             print(traceback.format_exc())
 
+        # 查找步骤
+        # 1. 向后找到结束字符： ", ', < ，找到代表当前文件的查找结束
+        # 2. 向前找到开始字符串：", ', >, 'http:', 'https:'
         _is_break = False
-        _urls = []
+        _urls = []  # 获取到可能是视频文件的url
+        _webdriver: WebDriverTool = None  # 动态获取的浏览器对象
         while True:
-            # 对页面信息进行解析
+            # 对页面信息进行解析, 获取特定后缀名的内容
             for _match in _regex.finditer(_html):
                 _start_pos = _match.span()[0]
                 _end_pos = _match.span()[1]
@@ -99,169 +107,342 @@ class AnalyzeTool(object):
                         if _last_pos < 0 or _html[_last_pos] in ('"', '\'', '>') or _temp_url.startswith('http:') or _temp_url.startswith('https:'):
                             # 已经到结束的条件
                             if _temp_url.find('/') < 0 and _temp_url.find('%2F') >= 0:
-                                # 如果没有'/'且存在
+                                # 如果没有'/'且存在URL传参转义符'%2F'(/的转义编码)，解码转回正常文本格式
                                 _temp_url = urllib.parse.unquote(_html[_start_pos: _end_pos])
 
-                            _temp_url = HTMLParser().unescape(_temp_url).replace('\\', '')
+                            # 将html编码转义符替换回正常的文本格式，同时把js情况下的字符转义符'\'也去掉
+                            _temp_url = html.unescape(_temp_url).replace('\\', '')
 
-                            # 处理http在后面的情况
+                            # 查找http://及https://的位置，如果发现不在字符串开头，则以该位置开始截取字符串
                             _index = _temp_url.rfind('http://')
                             if _index < 0:
                                 _index = _temp_url.rfind('https://')
                             if _index > 0:
                                 _temp_url = _temp_url[_index:]
-                            _urls.append(_temp_url.replace('\\', ''))
-                            break
+
+                            _urls.append(_temp_url.replace('\\', ''))  # 添加到url清单
+                            break  # 跳出向前向后的查找循环
 
                         _start_pos = _last_pos
 
+            # 尝试获取特定播放器的场景，比如dplayer
+            _parser = HtmlParser(_html, use_xpath2=False)
+
+            # dplayer 播放器
+            _class_xpath = '[@class="{0}" or starts-with(@class, "{0} ") or contains(@class, " {0} ") or substring(@class, string-length(@class) - string-length(" {0}") +1) = " {0}"]'.format(
+                'dplayer-video')
+            _els = _parser.find_elements([
+                ['xpath', '//div[@class="dplayer-video-wrap"]/video%s' % _class_xpath],
+            ])
+            for _el in _els:
+                _url = _el.get_attribute('src')
+                if _url is not None:
+                    _urls.append(_url)
+
             if len(_urls) > 0 or _is_break:
+                # 如果静态页面已经能查到视频文件，则不再通过动态页面代码进行处理
                 break
 
-            # 通过源码获取不到资源，改为通过动态代码处理, 再执行一次
-            _html = cls._get_web_html_source(url, **para_dict)
-            _is_break = True
-
-        if len(_urls) == 0:
-            return None
-        else:
-            # 以有http开头的链接优先处理
-            _ret_url = ''
-            for _url in _urls:
-                if _ret_url == '':
-                    _ret_url = _url
-                elif _ret_url.startswith('http'):
+            if _webdriver is None:
+                # 通过源码获取不到资源，改为通过动态代码处理, 再用同样的逻辑查找一次
+                _webdriver, _html = cls._get_web_html_source(url, **para_dict)
+            else:
+                # 动态代码也查找不到，尝试点击页面的播放按钮，然后再执行查找
+                # dplayer 播放器
+                _xpath = '//button[@class="{0}" or starts-with(@class, "{0} ") or contains(@class, " {0} ") or substring(@class, string-length(@class) - string-length(" {0}") +1) = " {0}"]'.format(
+                    'dplayer-play-icon')
+                _els = _parser.find_elements([
+                    ['xpath', _xpath],
+                ])
+                if len(_els) > 0:
+                    # 找到按钮，进行点击处理, 注意操作可能在iframe底下，需要特殊处理
+                    _ret = cls._do_script_with_iframe(
+                        _webdriver, [
+                            ['find', 'xpath', _xpath],
+                            ['click']
+                        ]
+                    )
+                    if len(_ret) > 0:
+                        # 等待页面加载
+                        time.sleep(float(para_dict.get('loaded_wait_time', '5')))
+                        _html = _webdriver.get_current_dom()
+                        _html = cls._get_iframe_source(_webdriver, _html)
+                    else:
+                        # 没有找到按钮
+                        break
+                else:
+                    # 找不到按钮，直接退出
                     break
-                elif _url.startswith('http'):
-                    _ret_url = _url
 
-            return _ret_url
+                # 最后一次查找
+                _is_break = True
+
+        # 关闭浏览器
+        if _webdriver is not None:
+            del _webdriver
+
+        if back_all:
+            return _urls
+        else:
+            if len(_urls) == 0:
+                return None
+            else:
+                # 以有http开头的链接优先处理
+                _ret_url = ''
+                for _url in _urls:
+                    if _ret_url == '':
+                        _ret_url = _url
+                    elif _ret_url.startswith('http'):
+                        break
+                    elif _url.startswith('http'):
+                        _ret_url = _url
+
+                return _ret_url
 
     @classmethod
-    def get_name_by_config(cls, url: str, config: dict, use_html_code=True, **para_dict) -> str:
+    def get_contents_by_config(cls, url: str, config: dict, attr_name: dict = {},
+                               use_html_code=True, error_on_not_exists: bool = False, **para_dict) -> dict:
         """
-        通过查找配置获取资源名
+        通过xpath配置字典获取指定的网页信息
 
         @param {str} url - 要获取的url
         @param {dict} config - 查找配置字典
-            name_selector {str} - 获取资源名的tag元素查找css selector表达式
-        @param {bool} use_html_code=True - 是否仅适用页面源码分析（False代表需获取动态页面代码）
-        @param {dict} para_dict - 传入的页面下载参数（参考config.xml）
+            key {str} - 内容标识
+            value {list} - 匹配上的xpath清单
+        @param {dict} attr_name={} - 设定对应check_contents的属性配置字典
+            key {str} - 内容标识
+            value {str} - 内容属性名，如果不指定代表内容来自显示的text
+        @param {bool} use_html_code=True - 是否仅使用页面源码分析（False代表需获取动态页面代码）
+        @param {bool} error_on_not_exists=False - 遇到查找不到时是否抛出异常
+        @param {dict} para_dict - 传入的页面下载参数（参考config.xml）及解析参数
 
-        @return {str} - 返回资源名
+        @returns {dict} - 获取到的网页信息
+            key {str} - 内容标识
+            value {str} - 内容值，获取不到值为None
         """
+        _para_dict = copy.deepcopy(para_dict)
+        _para_dict['url'] = url
         if use_html_code:
-            _html = cls._get_web_html_code(url, **para_dict)
+            _html = WebDriverTool.get_web_page_code(_para_dict)
         else:
-            _html = cls._get_web_html_source(url, **para_dict)
+            _html = WebDriverTool.get_web_page_dom(_para_dict)
 
-        _soup = BeautifulSoup(_html, 'html.parser')
-        _tags = _soup.select(config['name_selector'])
-        if len(_tags) == 0:
-            raise RuntimeError('Tag not found with selector "%s"' % config['name_selector'])
-        elif len(_tags) > 1:
-            raise RuntimeError('Found mutiple tags with selector "%s"' % config['name_selector'])
+        _parser = HtmlParser(_html)
 
-        # 返回结果
-        return _tags[0].string
-
-    @classmethod
-    def get_name_config(cls, urls: list, check_names: list, use_html_code=True, **para_dict) -> list:
-        """
-        分析网页智能获取资源名查找配置
-
-        @param {list} urls - 要解析的同一类页面url清单，传入越多url清单匹配的准确性越高
-        @param {list} check_names - 辅助分析代码的实际资源名清单，与对应位置的url相对应
-        @param {bool} use_html_code=True - 是否仅适用页面源码分析（False代表需获取动态页面代码）
-        @param {dict} para_dict - 传入的页面下载参数（参考config.xml）及解析参数，解析参数如下：
-            selector_up_level {int} - 从当前元素向父节点查找几层, 默认为0
-
-        @returns {list} - 解析出来的结果列表，每个配置为一个字符串
-        """
-        # 通过urls[0]进行解析，然后使用所有的urls进行结果的验证和排除
-        if use_html_code:
-            _html = cls._get_web_html_code(urls[0], **para_dict)
-        else:
-            _html = cls._get_web_html_source(urls[0], **para_dict)
-
-        # 可用配置结果清单
-        _configs = list()
-
-        _soup = BeautifulSoup(_html, 'html.parser')
-        _tags = _soup.find_all(text=check_names[0])
-        for _i in _tags:
-            _tag: Tag = _i.parent
-            _selectors = cls._get_bs4_tag_selectors(_tag, **para_dict)
-            print(_selectors)
-            for _selector in _selectors:
-                _check_tags = _soup.select(_selector[1])
-                # 只有匹配到1个的情况，才认为是可用的
-                if len(_check_tags) == 1 and _check_tags[0].string == check_names[0]:
-                    _configs.append(_selector[1])
-
-        # 从第二个开始验证
-        _temp = copy.deepcopy(_configs)
-        for _i in range(1, len(urls)):
-            _url = urls[_i]
-            if use_html_code:
-                _html = cls._get_web_html_code(_url, **para_dict)
+        _web_infos = dict()
+        # 遍历获取信息
+        for _id, _configs in config:
+            _els = _parser.find_elements([['xpath', _configs[0]]])
+            if len(_els) == 0:
+                if error_on_not_exists:
+                    raise ModuleNotFoundError(
+                        'content id[%s] not exists: xpath[%s]' % (_id, _configs[0]))
+                else:
+                    _val = None
             else:
-                _html = cls._get_web_html_source(_url, **para_dict)
+                _attr_name = attr_name.get(_id, '')
+                if _attr_name == '':
+                    _val = _els[0].text
+                else:
+                    _val = _els[0].get_attribute(_attr_name)
 
-            _soup = BeautifulSoup(_html, 'html.parser')
+            _web_infos[_id] = _val
 
-            for _config in _temp:
-                _check_tags = _soup.select(_config)
-                if not (len(_check_tags) == 1 and _check_tags[0].string == check_names[0]):
-                    # 移除规则
-                    _configs.remove(_config)
-
-        return _configs
+        return _web_infos
 
     @classmethod
-    def get_col_config(cls, urls: list, check_names: list, use_html_code=True, **para_dict)-> list:
+    def get_contents_config(cls, urls: list, check_contents: dict, attr_name: dict = {}, is_tail: bool = False,
+                            use_html_code=True, search_dict: dict = {}, **para_dict) -> dict:
         """
-        分析网页智能获取资源分卷查找配置
+        尝试解析获取单个内容对应的xpath清单
 
         @param {list} urls - 要解析的同一类页面url清单，传入越多url清单匹配的准确性越高
-        @param {list} check_names - 辅助分析代码的实际卷名清单，与对应位置的url相对应
-            每一个url对应传入两个相邻的显示卷名，例如('第01集', '第02集')
-        @param {bool} use_html_code=True - 是否仅适用页面源码分析（False代表需获取动态页面代码）
-        @param {dict} para_dict - 传入的页面下载参数（参考config.xml）及解析参数，解析参数如下：
-            selector_up_level {int} - 从当前元素向父节点查找几层, 默认为0
-            max_find_col_parent_level {int} - 从当前元素向上找共同父节点，最多找几层，默认为3
+        @param {dict} check_contents - 辅助分析代码的实际内容信息字典
+            key {str} - 内容标识，例如name, author, ...
+            value {list} - 与urls一一对应的内容信息清单
+        @param {dict} attr_name={} - 设定对应check_contents的属性配置字典
+            key {str} - 内容标识
+            value {str} - 内容属性名，如果不指定代表内容来自显示的text
+        @param {bool} is_tail=False - text情况，指示是否子对象的tail部分(<li><span>xx</span>要搜索的内容</li>)
+        @param {bool} use_html_code=True - 是否仅使用页面源码分析（False代表需获取动态页面代码）
+        @param {dict} search_dict - 查找参数
+            selector_up_level {int} - 从当前元素向父节点查找几层, 默认0层, -1代表一直往上追索
+            split_class {bool} - 将类拆开单个获取（将会增加需匹配的xpath数量, 降低效率），默认为False
+        @param {dict} para_dict - 传入的页面下载参数（参考config.xml）及解析参数
 
-        @returns {list} - 解析出来的结果列表，每个配置为一个字典
+        @returns {dist} - 匹配上的xpath列表字典
+            key {str} - 内容标识
+            value {list} - 匹配上的xpath清单
         """
         # 通过urls[0]进行解析，然后使用所有的urls进行结果的验证和排除
+        _para_dict = copy.deepcopy(para_dict)
+        _para_dict['url'] = urls[0]
         if use_html_code:
-            _html = cls._get_web_html_code(urls[0], **para_dict)
+            _html = WebDriverTool.get_web_page_code(_para_dict)
         else:
-            _html = cls._get_web_html_source(urls[0], **para_dict)
+            _html = WebDriverTool.get_web_page_dom(_para_dict)
 
-        # 可用配置结果清单
-        _configs = list()
+        _parser = HtmlParser(_html)
 
-        _soup = BeautifulSoup(_html, 'html.parser')
-        _tags = _soup.find_all(text=check_names[0][0])
+        # 逐个内容标识通过第一个url获取匹配xpath
+        _match_dict = dict()  # 最后匹配的配置字典
+        for _id, _contents in check_contents.items():
+            # 初始的搜索
+            _attr_name = attr_name.get(_id, '')
+            if _attr_name == '':
+                _attr_name = 'text()'
+            else:
+                _attr_name = '@' + _attr_name
 
-        _max_find_col_parent_level = int(para_dict.get('max_find_col_parent_level', '3'))
-        for _tag in _tags:
-            # 尝试找相邻的卷信息
-            _level = 0
-            _parent = None
-            _tag: Tag
-            if (_tag.next_sibling is not None and _tag.next_sibling.string == check_names[0][1]) or (_tag.previous_sibling is not None and _tag.previous_sibling.string == check_names[0][1]):
-                # 找到配置了
-                _parent = _tag.parent
+            # 查找对象
+            _els = _parser.find_elements(
+                [['xpath', './/*[%s="%s"]' % (_attr_name, _contents[0])]]
+            )
 
-            _text_selector = ''
-            _href_selector = _tag.name
-            _temp_tag: Tag = _tag
-            while _level <= _max_find_col_parent_level:
-                _next_sibling = _temp_tag.next_sibling
-                if _text_selector == ''
-                if _temp_tag. is not None
+            if len(_els) == 0:
+                raise ModuleNotFoundError(
+                    'element not found: attr_name[%s], content["%s"], url[%s]' % (
+                        _attr_name, _contents[0], urls[0]
+                    )
+                )
+
+            _configs = list()
+            for _element in _els:
+                _xpaths = cls.get_element_xpath(
+                    _parser, _element, check_xpath=True, **search_dict
+                )
+                _configs.extend(_xpaths)
+
+            _match_dict[_id] = _configs
+
+        # 逐个内容标识通过比较对象进行匹配xpath的验证
+        for _id, _contents in check_contents.items():
+            _configs = _match_dict[_id]
+            # 逐个比较对象进行验证处理
+            for _index in range(1, len(urls)):
+                if len(_configs) == 0:
+                    # 没有找到任何需要验证的xpath，直接退出不处理
+                    break
+
+                # 获取比较对象页面信息
+                _para_dict['url'] = urls[_index]
+                if use_html_code:
+                    _html_check = WebDriverTool.get_web_page_code(_para_dict)
+                else:
+                    _html_check = WebDriverTool.get_web_page_dom(_para_dict)
+
+                _parser_check = HtmlParser(_html_check)
+                _attr_name = attr_name.get(_id, '')
+
+                # 逐个xpath进行比较确认是否通过
+                _check_ok_xpaths = list()
+                for _xpath in _configs:
+                    _els_check = _parser_check.find_elements([['xpath', _xpath]])
+                    if len(_els_check) != 1:
+                        continue
+
+                    if _attr_name == '':
+                        if is_tail:
+                            _childs = _els_check[0].element.getchildren()
+                            if not(len(_childs) > 0 and _childs[0].tail == _contents[_index]):
+                                continue
+                        else:
+                            if _els_check[0].text != _contents[_index]:
+                                continue
+                    else:
+                        if _els_check[0].get_attribute(_attr_name) != _contents[_index]:
+                            continue
+
+                    # 检查通过
+                    _check_ok_xpaths.append(_xpath)
+
+                # 当前对象比较完成，更新xpath清单，继续比较下一个对象
+                _configs = _check_ok_xpaths
+
+            # 更新处理结果
+            _match_dict[_id] = _configs
+
+        return _match_dict
+
+    @classmethod
+    def get_element_xpath(cls, html_parser: HtmlParser, element: HtmlElement, check_xpath: bool = False,
+                          current_level: int = 0, **search_dict) -> list:
+        """
+        获取查找指定元素的可用xpath selector清单
+
+        @param {HtmlParser} html_parser - html解析器
+        @param {HtmlElement} element - 要查找的元素对象
+        @param {bool} check_xpath=False - 是否进行最终的xpath校验
+        @param {int} current_level=0 - 当前查找层数
+        @param {dict} search_dict - 查找参数
+            selector_up_level {int} - 从当前元素向父节点查找几层, 默认0层, -1代表一直往上追索
+            split_class {bool} - 将类拆开单个获取（将会增加需匹配的xpath数量, 降低效率），默认为False
+
+
+        @returns {list[[level, str]]} - selector清单, [所处层, 查找表达式]
+        """
+        _selectors = []
+
+        _end = False
+        # 通过id查找, 如果有id，则直接通过id处理
+        if element.get_attribute('id') is not None:
+            _selectors.append([current_level, '/%s[@id="%s"]' % (element.tag_name, element.id)])
+            _end = True
+
+        # 通过name名查找a
+        _name = element.get_attribute('name')
+        if not _end and _name is not None:
+            _selectors.append([current_level, '/%s[@name="%s"]' % (element.tag_name, _name)])
+            _end = True
+
+        if not _end:
+            # 通过标签名 + css类查找
+            _class_list = element.get_attribute('class')
+            if _class_list is not None:
+                _selectors.append(
+                    [current_level, '/%s[@class="%s"]' % (element.tag_name, _class_list)]
+                )
+                if search_dict.get('split_class', False):
+                    for _class in _class_list.split(' '):
+                        if _class != '':
+                            _selectors.append(
+                                [current_level, '/{1}[@class="{0}" or starts-with(@class, "{0} ") or contains(@class, " {0} ") or ends-with(@class, " {0}")]'.format(
+                                    _class, element.tag_name)]
+                            )
+
+            # 直接通过标签获取
+            _selectors.append([current_level, '/%s' % element.tag_name])
+
+            # 找父节点, 并进行组合处理
+            _up_level = int(search_dict.get('selector_up_level', '0'))
+            if (_up_level == -1 or current_level < _up_level) and element.parent is not None:
+                _parent_selectors = cls.get_element_xpath(
+                    html_parser, element.parent, current_level=current_level + 1, **search_dict
+                )
+                # 增加组合查找
+                _cur_len = len(_selectors)  # 当前选择器的长度
+                for _up_selector in _parent_selectors:
+                    for _index in range(_cur_len):
+                        _selectors.append([
+                            _up_selector[0],
+                            '%s%s' % (_up_selector[1], _selectors[_index][1])
+                        ])
+
+        # 处理最后的返回结果, 第0层增加/形成//开头，遍历所有层级
+        if current_level == 0:
+            _check_list = list()
+            for _index in range(len(_selectors)):
+                _selectors[_index][1] = '/%s' % _selectors[_index][1]
+                if check_xpath:
+                    # 逐个xpath进行验证
+                    _find_el = html_parser.find_elements([['xpath', _selectors[_index][1]]])
+                    if len(_find_el) == 1 and element.is_same_with(_find_el[0], with_path=True):
+                        _check_list.append(_selectors[_index][1])
+
+            if check_xpath:
+                return _check_list
+
+        return _selectors
 
     #############################
     # 内部工具
@@ -276,165 +457,106 @@ class AnalyzeTool(object):
 
         @returns {str} - 返回的html代码
         """
-        # 生成Request对象
-        _request = urllib.request.Request(url, headers=headers)
-        return NetTool.get_web_page_code(
-            _request, timeout=float(para_dict.get('overtime', '300.0')),
-            encoding=para_dict.get('encoding', 'utf-8'), retry=int(para_dict.get('connect_retry', '3')),
-        )
+        _para_dict = Tools.get_correct_para_dict(para_dict)
+        _para_dict['url'] = url
+        return WebDriverTool.get_web_page_code(_para_dict, headers=HEADERS)
 
     @classmethod
     def _get_web_html_source(cls, url: str, **para_dict) -> str:
         """
-        获取页面的动态html代码
+        获取页面的动态html代码(包含iframe的代码)
 
         @param {str} url - 页面url
         @param {kwargs}  para_dict - 页面打开的参数配置
 
-        @returns {str} - 返回的html代码
+        @returns {(WebDriverTool,str)} - 浏览器对象，返回的html代码
         """
-        CHROME_OPTIONS = Options()
+        _para_dict = Tools.get_correct_para_dict(para_dict)
+        _para_dict['url'] = url
 
-        # webdriver模式禁止图片和CSS下载的参数
-        CHROME_OPTIONS.add_experimental_option(
-            "prefs",
-            {
-                "profile.managed_default_content_settings.images": 2,
-                'permissions.default.stylesheet': 2
-            }
-        )
-        # 防止网站检测出Selenium的window.navigator.webdriver属性
-        CHROME_OPTIONS.add_experimental_option('excludeSwitches', ['enable-automation'])
-        CHROME_OPTIONS.add_argument("--no-sandbox")
-        CHROME_OPTIONS.add_argument("--lang=zh-CN")
+        _webdriver: WebDriverTool = None
 
-        # 使用代理
-        if para_dict.get('proxy', '') != '':
-            CHROME_OPTIONS.add_argument(
-                "--proxy-server==%s" %
-                para_dict.get('proxy', 'http://127.0.0.1:9000')
-            )
-
-        DRIVER_OPTIONS = {
-            'chrome_options': CHROME_OPTIONS
-        }
-
-        _browser = NetTool.get_webdriver_browser(
-            common_options={
-                'timeout': float(para_dict.get('wd_overtime', '30')),
-                'headless': (para_dict.get('wd_headless', 'n') == 'y'),
-                'wait_all_loaded': True,
-                'size_type': ('min' if para_dict.get('wd_min', 'n') == 'y' else '')
-            },
-            webdriver_type=BaseDriverFW.get_webdriver_type(para_dict.get('webdriver', 'Chrome')),
-            driver_options=DRIVER_OPTIONS
-        )
         _retry = 0
         while True:
             try:
-                _html_source = NetTool.get_web_page_dom_code(
-                    url,
-                    browser=_browser,
-                    common_options={
-                        'timeout': float(para_dict.get('wd_overtime', '30')),
-                        'headless': (para_dict.get('wd_headless', 'n') == 'y'),
-                        'wait_all_loaded': True,
-                        'quit': False,
-                        'size_type': ('min' if para_dict.get('wd_min', 'n') == 'y' else '')
-                    },
-                    webdriver_type=BaseDriverFW.get_webdriver_type(
-                        para_dict.get('webdriver', 'Chrome')),
-                    driver_options=DRIVER_OPTIONS
-                )
+                _webdriver = WebDriverTool(_para_dict)
+                _html_source = _webdriver.get_current_dom()
                 # 成功执行，跳出循环
                 break
             except:
-                if _retry <= int(para_dict.get('connect_retry', '3')):
+                if _retry <= int(_para_dict.get('connect_retry', '3')):
                     _retry += 1
                     continue
                 else:
                     raise
 
-        # 等待10秒让页面加载完成
-        time.sleep(float(para_dict.get('chrome_load_time', '10')))
+        # 等待5秒让页面加载完成
+        time.sleep(float(para_dict.get('loaded_wait_time', '5')))
 
         # 获取iframe代码
-        _html_source = cls._get_iframe_source(_browser, _html_source)
+        _html_source = cls._get_iframe_source(_webdriver, _html_source)
 
         # 关闭浏览器
-        _browser.quit()
+        # del _webdriver
 
         # 返回结果
-        return _html_source
+        return _webdriver, _html_source
 
     @classmethod
-    def _get_iframe_source(cls, browser, merge_html: str) -> str:
+    def _get_iframe_source(cls, webdriver_tool: WebDriverTool, merge_html: str) -> str:
         """
         根据浏览器获取iframe文本并合并到html文件中
 
-        @param {webdriver.browser} browser - 浏览器对象
+        @param {WebDriverTool} webdriver_tool - webdriver工具实例
         @param {str} merge_html - 需要合并的文本
 
         @returns {str} - 合并后的文本（注意只是单纯在最后面添加）
         """
         _html = merge_html
-        # 检查是否有iframe页面
-        _iframes = []
-        _iframes = browser.find_elements_by_tag_name("iframe")
+
+        # 遍历iframe页面获取代码并合并
+        _iframes = webdriver_tool.find_elements([['xpath', '//iframe']])
         for _iframe in _iframes:
-            browser.switch_to.frame(_iframe)
-            _html = '%s%s' % (_html, browser.page_source)
+            webdriver_tool.switch_to_frame(_iframe)
+            _html = '%s%s' % (_html, webdriver_tool.get_current_dom())
 
-            # 处理嵌套
-            _html = cls._get_iframe_source(browser, _html)
+            # 处理iframe嵌套的情况
+            _html = cls._get_iframe_source(webdriver_tool, _html)
 
-            # 切换为上一父frame
-            browser.switch_to.parent_frame()
+            # 切换回上一层iframe
+            webdriver_tool.switch_to_parent_frame()
 
         return _html
 
     @classmethod
-    def _get_bs4_tag_selectors(cls, tag: Tag, current_level: int = 0, **para_dict) -> list:
+    def _do_script_with_iframe(cls, webdriver_tool: WebDriverTool, steps: list) -> list:
         """
-        获取bs4标签元素的查找css selector清单
+        遍历iframe执行动作，直到遇到可正常执行的情况
 
-        @param {Tag} tag - 要解析的标签元素
-        @param {int} current_level=0 - 当前查找层数
-        @param {dict} para_dict - 查找参数
-            selector_up_level {int} - 从当前元素向父节点查找几层
+        @param {WebDriverTool} webdriver_tool - webdriver工具实例
+        @param {list} steps - 要执行的动作数组
 
-        @returns {list[(level, str)]} - selector清单, (所处层, 查找表达式)
+        @returns {list} - 返回执行后的元素列表
         """
-        _selectors = []
-        # 通过id查找, 如果有id，则直接通过id处理
-        if 'id' in tag.attrs.keys():
-            _selectors.append((current_level, '%s #%s' % (tag.name, tag.attrs['id'])))
-            return _selectors
+        # 先执行当前frame页自身
+        _ret = webdriver_tool.do_script(steps)
+        if len(_ret) > 0:
+            return _ret
 
-        if 'class' in tag.attrs.keys():
-            # 通过标签名 + css类查找
-            _class_list = tag.attrs['class']
-            _selectors.append((current_level, '%s.%s' % (tag.name, '.'.join(_class_list))))
+        # 自身frame页没有执行成功，遍历iframe页面
+        _iframes = webdriver_tool.find_elements([['xpath', '//iframe']])
+        for _iframe in _iframes:
+            webdriver_tool.switch_to_frame(_iframe)
 
-        # 直接tag标签获取
-        _selectors.append((current_level, tag.name))
+            # 处理iframe嵌套的情况
+            _ret = cls._do_script_with_iframe(webdriver_tool, steps)
+            if len(_ret) > 0:
+                return _ret
 
-        # 找父节点
-        _up_level = int(para_dict.get('selector_up_level', '0'))
-        if current_level < _up_level:
-            _parent_selectors = cls._get_bs4_tag_selectors(
-                tag.parent, current_level=current_level+1, **para_dict
-            )
-            # 增加组合查找
-            _cur_len = len(_selectors)  # 当前选择器的长度
-            for _up_selector in _parent_selectors:
-                for _index in range(_cur_len):
-                    _selectors.append((
-                        _up_selector[0],
-                        '%s > %s' % (_up_selector[1], _selectors[_index][1])
-                    ))
+            # 切换回上一层iframe
+            webdriver_tool.switch_to_parent_frame()
 
-        return _selectors
+        return _ret
 
 
 if __name__ == '__main__':
@@ -445,20 +567,9 @@ if __name__ == '__main__':
            '发布日期：%s\n'
            '版本：%s' % (__MOUDLE__, __DESCRIPT__, __AUTHOR__, __PUBLISH__, __VERSION__)))
 
-    # _url = AnalyzeTool.get_media_url(
-    #     'http://javhdus.com/vod-play-id-109318-src-1-num-1.html',
-    #     ['m3u8', 'mp4'], **{'proxy': 'http://127.0.0.1:9000'}
-    # )
-    # print(_url)
-
-    # _configs = AnalyzeTool.get_name_config(
-    #     ['http://www.edddh.com/vod/sishen/', ], ['死神', ],
-    #     **{
-    #         'selector_up_level': '3'
-    #     }
-    # )
-
     print(
-        AnalyzeTool.get_name_by_config(
-            'http://www.edddh.com/vod/sishen/', {'name_selector': 'div #zanpian-score > h1.text-overflow'})
+        AnalyzeTool.get_media_url(
+            'http://www.edddh.net/vod/juchangbanxiamuyourenzhangyuanjiekongchan/1-1.html',
+            **{'loaded_wait_time': '1'}
+        )
     )

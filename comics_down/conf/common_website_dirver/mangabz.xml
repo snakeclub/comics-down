@@ -1,0 +1,98 @@
+<driver_config>
+    <!--
+        Mangabz的网站驱动配置, 标签名为主域名
+        remark : 网站说明
+        subsite : 该网站下可处理的子域名，为json格式的字符串，例如["","",...]
+        configs : 网站解析配置，标签名为配置类型，name-获取资源名，vol-获取卷信息，file-获取文件信息
+            is_html_code : type="bool", 是否使用网站静态代码
+            headers : 访问网站使用的http协议头，使用xml的key-value方式配置
+            roll_to_end : type="bool", 是否滚动至网页结尾，仅webdriver方式有效
+            until : 如果不等待所有页面加载完，通过xpath判断元素是否存在
+                例如: '//img[@id="dracga" and @style]' - 查找id为dracga且包含style属性的img对象
+            para_dict : 改变前端送入任务执行字典值的配置
+            scripts : type="list"，解析脚本数组，按脚本逐步执行, 标签为item，每个item为一步执行脚本
+                执行脚本格式是json数组形式["", "", ...]
+            sub_scripts : 子脚本定义
+                [子脚本标识名] : type="list", 子脚本标识名，标签为item，每个item为一步执行脚本
+    -->
+    <www.mangabz.com>
+        <remark>Mangabz漫画网站</remark>
+        <subsite></subsite>
+        <configs>
+            <name>
+                <!-- 资源标题获取配置 -->
+                <is_html_code type="bool">true</is_html_code>
+                <headers>
+                    <User-Agent>Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36</User-Agent>
+                </headers>
+                <roll_to_end type="bool">false</roll_to_end>
+                <until></until>
+                <scripts type="list">
+                    <item>["xpath", "//p[@class=\"detail-info-title\"]"]</item>
+                    <item>["set_to_var", "name", "el_info", ".text"]</item>
+                </scripts>
+                <sub_scripts>
+                </sub_scripts>
+            </name>
+            <vol>
+                <!-- 资源卷信息获取配置 -->
+                <is_html_code type="bool">true</is_html_code>
+                <headers>
+                    <User-Agent>Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36</User-Agent>
+                </headers>
+                <roll_to_end type="bool">false</roll_to_end>
+                <until></until>
+                <scripts type="list">
+                    <item>["xpath", "//div[@id=\"chapterlistload\"]/a"]</item>
+                    <!-- 要传入下一页的url地址 -->
+                    <item>["set_to_var", "vol_next_url", "eval", "''"]</item>
+                    <!-- 将卷信息数组存入 vols , 每个项为一个卷信息数组，顺序为卷名、url -->
+                    <item>["set_to_var", "vols", "el_infos", ".text", "@href"]</item>
+                </scripts>
+                <sub_scripts>
+                </sub_scripts>
+            </vol>
+            <file>
+                <!-- 资源卷下面的文件信息获取配置 -->
+                <is_html_code type="bool">false</is_html_code>
+                <headers></headers>
+                <roll_to_end type="bool">false</roll_to_end>
+                <until>//img[@id="cp_image"]</until>
+                <scripts type="list">
+                    <!-- 获取总页数 -->
+                    <item>["xpath", "//span[@id=\"lbcurrentpage\"]/.."]</item>
+                    <item>["set_to_var", "total", "el_info", ".text"]</item>
+                    <item>["exec", "vars['total'] = int(vars['total'].split('-')[1])"]</item>
+                    <!-- 要传入下一次文件信息获取执行的参数对象 -->
+                    <item>["set_to_var", "next_tran_para", "eval", "None"]</item>
+                    <!-- 循环提取每个页面的图片信息 -->
+                    <item>["set_to_var", "files", "eval", "list()"]</item>
+                    <item>["set_to_var", "current", "eval", "0"]</item>
+                    <item><![CDATA[["while", "vars['current'] < vars['total']", "get_page_file"]]]></item>
+                </scripts>
+                <sub_scripts>
+                    <get_page_file type="list">
+                        <!-- 获取当前页的信息，然后跳转到下一页继续处理 -->
+                        <item>["exec", "els = None"]</item>
+                        <item>["xpath", "//span[@id=\"lbcurrentpage\"]"]</item>
+                        <item>["set_to_var", "current", "el_info", ".text"]</item>
+                        <item>["exec", "vars['current'] = int(vars['current'])"]</item>
+                        <!-- 解析漫画图片地址 -->
+                        <item>["exec", "els = None"]</item>
+                        <item>["xpath", "//img[@id=\"cp_image\"]"]</item>
+                        <item>["set_to_var", "current_url", "el_info", "@src"]</item>
+                        <item>["exec", "from HiveNetLib.base_tools.string_tool import StringTool"]</item>
+                        <item>["exec", "vars['files'].append([StringTool.fill_fix_string(str(vars['current']), 6, '0') + '.jpg', vars['current_url'], 'http', None])"]</item>
+                        <!-- 跳转到下一页 -->
+                        <item><![CDATA[["if", "vars['total'] > vars['current']", "show_next"]]]></item>
+                    </get_page_file>
+                    <show_next type="list">
+                        <!-- 跳转到下一页 -->
+                        <item>["run_script", "ShowNext();"]</item>
+                        <item>["wait", "0.5"]</item>
+                    </show_next>
+                </sub_scripts>
+            </file>
+        </configs>
+    </www.mangabz.com>
+</driver_config>

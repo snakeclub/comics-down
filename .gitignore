@@ -111,3 +111,7 @@ private_driver/
 .vscode-test/
 .vscode/
 
+# Mac
+.DS_Store
+.DS_Store/*
+

@@ -1,0 +1,59 @@
+<driver_config>
+    <!--
+        EDD动漫网站的网站驱动配置, 标签名为主域名
+        remark : 网站说明
+        subsite : 该网站下可处理的子域名，为json格式的字符串，例如["","",...]
+        configs : 网站解析配置，标签名为配置类型，name-获取资源名，vol-获取卷信息，file-获取文件信息
+            is_html_code : type="bool", 是否使用网站静态代码
+            headers : 访问网站使用的http协议头，使用xml的key-value方式配置
+            roll_to_end : type="bool", 是否滚动至网页结尾，仅webdriver方式有效
+            until : 如果不等待所有页面加载完，通过xpath判断元素是否存在
+                例如: '//img[@id="dracga" and @style]' - 查找id为dracga且包含style属性的img对象
+            para_dict : 改变前端送入任务执行字典值的配置
+            scripts : type="list"，解析脚本数组，按脚本逐步执行, 标签为item，每个item为一步执行脚本
+                执行脚本格式是json数组形式["", "", ...]
+            sub_scripts : 子脚本定义
+                [子脚本标识名] : type="list", 子脚本标识名，标签为item，每个item为一步执行脚本
+    -->
+    <www.edddh.net>
+        <remark>EDD动漫-E站(请传入介绍页而非播放页)</remark>
+        <subsite></subsite>
+        <configs>
+            <name>
+                <!-- 资源标题获取配置 -->
+                <is_html_code type="bool">true</is_html_code>
+                <headers></headers>
+                <roll_to_end type="bool">false</roll_to_end>
+                <until></until>
+                <scripts type="list">
+                    <item>["xpath", "//div[@id=\"zanpian-score\"]/h1[@class=\"text-overflow\"]"]</item>
+                    <item>["set_to_var", "name", "el_info", ".text"]</item>
+                </scripts>
+                <sub_scripts>
+                </sub_scripts>
+            </name>
+            <!-- 资源卷信息获取配置-不获取不配置该节点，把当前页面当作卷页面即可 -->
+            <!-- <vol></vol> -->
+            <file>
+                <!-- 资源卷下面的文件信息获取配置 -->
+                <is_html_code type="bool">false</is_html_code>
+                <headers></headers>
+                <roll_to_end type="bool">false</roll_to_end>
+                <until>//div[@class="playlist"]/ul[contains(@class, " active")]</until>
+                <scripts type="list">
+                    <!-- 获取当前激活播放源的清单 -->
+                    <item>["xpath", "//div[@class=\"playlist\"]/ul[contains(@class, \" active\")]"]</item>
+                    <item>["children"]</item>
+                    <!-- 要传入下一次文件信息获取执行的参数对象 -->
+                    <item>["set_to_var", "next_tran_para", "eval", "None"]</item>
+                    <!-- 将文件信息数组存入files, 每个项为一个文件信息数组，顺序为文件名、url、downtype、extend_json -->
+                    <item>["set_to_var", "files", "sub_el_infos", "./a[1]", ".text", "@href", "'http'", "None"]</item>
+                    <!-- 指定需要通过url页面获取真实下载地址 -->
+                    <item>["set_to_var", "files_deal", "eval", "{'media_by_page': ['m3u8', 'mp4']}"]</item>
+                </scripts>
+                <sub_scripts>
+                </sub_scripts>
+            </file>
+        </configs>
+    </www.edddh.net>
+</driver_config>
