@@ -27,7 +27,7 @@ DEPENDENCIES = [
     'Crypto',
     'm3u8',
     'selenium',
-    'mitmproxy==5.0.1'
+    'mitmproxy==8.0.0'
 ]
 
 # DEPENDENCIES = []
